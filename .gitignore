@@ -13,3 +13,6 @@
 .externalNativeBuild
 .cxx
 local.properties
+/AGENTS.md
+/.agents/AGENTS.md
+/.agents/
