@@ -8,11 +8,17 @@ import android.widget.ImageView
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import java.io.File
+import java.util.concurrent.Executors
+import android.os.Handler
+import android.os.Looper
 
 class HistoryAdapter(
     private var items: List<HistoryItem>,
     private val onItemClick: (HistoryItem) -> Unit
 ) : RecyclerView.Adapter<HistoryAdapter.ViewHolder>() {
+
+    private val executor = Executors.newFixedThreadPool(4)
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
         val imgHistory: ImageView = view.findViewById(R.id.img_history)
@@ -45,25 +51,48 @@ class HistoryAdapter(
         }
         holder.txtConfidence.setBackgroundColor(context.getColor(bgDrawable))
 
-        // Load image bitmap safely from local file storage path
-        if (item.imagePath.isNotEmpty()) {
-            val imgFile = File(item.imagePath)
+        // Load image bitmap safely from local file storage path without blocking UI
+        val imgPath = item.imagePath
+        holder.imgHistory.tag = imgPath // tag to prevent async mismatch
+        holder.imgHistory.setImageResource(android.R.drawable.ic_menu_report_image) // default placeholder
+
+        if (imgPath.isNotEmpty()) {
+            val imgFile = File(imgPath)
             if (imgFile.exists()) {
-                try {
-                    val bitmap = BitmapFactory.decodeFile(imgFile.absolutePath)
-                    if (bitmap != null) {
-                        holder.imgHistory.setImageBitmap(bitmap)
-                    } else {
-                        holder.imgHistory.setImageResource(android.R.drawable.ic_menu_report_image)
+                executor.execute {
+                    try {
+                        val options = BitmapFactory.Options()
+                        options.inJustDecodeBounds = true
+                        BitmapFactory.decodeFile(imgFile.absolutePath, options)
+                        
+                        // Calculate sample size to downscale (aiming for ~100x100 thumbnail)
+                        var inSampleSize = 1
+                        val reqWidth = 100
+                        val reqHeight = 100
+                        val height = options.outHeight
+                        val width = options.outWidth
+                        if (height > reqHeight || width > reqWidth) {
+                            val halfHeight = height / 2
+                            val halfWidth = width / 2
+                            while ((halfHeight / inSampleSize) >= reqHeight && (halfWidth / inSampleSize) >= reqWidth) {
+                                inSampleSize *= 2
+                            }
+                        }
+                        
+                        options.inSampleSize = inSampleSize
+                        options.inJustDecodeBounds = false
+                        val bitmap = BitmapFactory.decodeFile(imgFile.absolutePath, options)
+                        
+                        mainHandler.post {
+                            if (holder.imgHistory.tag == imgPath && bitmap != null) {
+                                holder.imgHistory.setImageBitmap(bitmap)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
                     }
-                } catch (e: Exception) {
-                    holder.imgHistory.setImageResource(android.R.drawable.ic_menu_report_image)
                 }
-            } else {
-                holder.imgHistory.setImageResource(android.R.drawable.ic_menu_report_image)
             }
-        } else {
-            holder.imgHistory.setImageResource(android.R.drawable.ic_menu_report_image)
         }
 
         holder.itemView.setOnClickListener { onItemClick(item) }

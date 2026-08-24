@@ -211,78 +211,208 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="horizontal"
-                        android:gravity="center_vertical"
-                        android:layout_marginBottom="12dp">
-
-                        <com.google.android.material.card.MaterialCardView
-                            android:layout_width="100dp"
-                            android:layout_height="100dp"
-                            app:cardCornerRadius="8dp"
-                            app:strokeWidth="0dp">
-                            <ImageView
-                                android:id="@+id/img_scanned"
-                                android:layout_width="match_parent"
-                                android:layout_height="match_parent"
-                                android:scaleType="centerCrop"
-                                tools:src="@android:drawable/ic_menu_report_image"/>
-                        </com.google.android.material.card.MaterialCardView>
+                        android:gravity="center"
+                        android:layout_marginBottom="16dp"
+                        android:weightSum="2">
 
                         <LinearLayout
-                            android:layout_width="match_parent"
+                            android:layout_width="0dp"
                             android:layout_height="wrap_content"
+                            android:layout_weight="1"
                             android:orientation="vertical"
-                            android:layout_marginStart="16dp">
-
+                            android:gravity="center"
+                            android:layout_marginEnd="4dp">
                             <TextView
-                                android:id="@+id/txt_disease_label"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Original Image"
+                                android:textColor="@color/gray_text"
+                                android:textSize="12sp"
+                                android:layout_marginBottom="4dp"/>
+                            <com.google.android.material.card.MaterialCardView
+                                android:layout_width="120dp"
+                                android:layout_height="120dp"
+                                app:cardCornerRadius="8dp"
+                                app:strokeWidth="0dp">
+                                <ImageView
+                                    android:id="@+id/img_scanned"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="match_parent"
+                                    android:scaleType="centerCrop"
+                                    tools:src="@android:drawable/ic_menu_report_image"/>
+                            </com.google.android.material.card.MaterialCardView>
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical"
+                            android:gravity="center"
+                            android:layout_marginStart="4dp">
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="D-CLAHE Enhanced"
+                                android:textColor="@color/accent_green"
+                                android:textStyle="bold"
+                                android:textSize="12sp"
+                                android:layout_marginBottom="4dp"/>
+                            <com.google.android.material.card.MaterialCardView
+                                android:layout_width="120dp"
+                                android:layout_height="120dp"
+                                app:cardCornerRadius="8dp"
+                                app:strokeWidth="0dp">
+                                <ImageView
+                                    android:id="@+id/img_enhanced"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="match_parent"
+                                    android:scaleType="centerCrop"
+                                    tools:src="@android:drawable/ic_menu_report_image"/>
+                            </com.google.android.material.card.MaterialCardView>
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
+
+                            <!-- Base Model Section -->
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Base Model (MobileNetV3)"
+                                android:textColor="@color/gray_text"
+                                android:textSize="12sp"/>
+                            <TextView
+                                android:id="@+id/txt_base_label"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="Cassava Mosaic Disease"
                                 android:textColor="@color/black"
-                                android:textSize="18sp"
+                                android:textSize="16sp"
                                 android:textStyle="bold"/>
-
                             <LinearLayout
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:orientation="horizontal"
-                                android:layout_marginTop="6dp"
+                                android:layout_marginTop="2dp"
                                 android:gravity="center_vertical">
-
                                 <TextView
-                                    android:id="@+id/txt_confidence"
+                                    android:id="@+id/txt_base_confidence"
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
-                                    android:text="92% Confidence"
+                                    android:text="92% Conf."
                                     android:textColor="@color/accent_green"
                                     android:textStyle="bold"
-                                    android:textSize="14sp"/>
-
+                                    android:textSize="12sp"/>
                                 <ProgressBar
-                                    android:id="@+id/progress_confidence"
+                                    android:id="@+id/progress_base_confidence"
                                     style="?android:attr/progressBarStyleHorizontal"
-                                    android:layout_width="match_parent"
-                                    android:layout_height="6dp"
-                                    android:layout_marginStart="12dp"
+                                    android:layout_width="0dp"
+                                    android:layout_height="4dp"
+                                    android:layout_weight="1"
+                                    android:layout_marginStart="8dp"
+                                    android:layout_marginEnd="8dp"
                                     android:progress="92"
                                     android:progressTint="@color/accent_green"
                                     android:progressBackgroundTint="@color/light_green_bg"/>
+                                <TextView
+                                    android:id="@+id/txt_base_time"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="30ms"
+                                    android:textColor="@color/gray_text"
+                                    android:textSize="10sp"/>
                             </LinearLayout>
+
+                            <TextView
+                                android:id="@+id/txt_base_metrics"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Shape: N/A | Type: N/A | Size: N/A"
+                                android:textColor="@color/gray_text"
+                                android:textSize="10sp"
+                                android:layout_marginTop="2dp"/>
+
+                            <View
+                                android:layout_width="match_parent"
+                                android:layout_height="1dp"
+                                android:layout_marginVertical="8dp"
+                                android:background="#F0F0F0"/>
+
+                            <!-- Enhanced Model Section -->
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Enhanced Model"
+                                android:textColor="@color/gray_text"
+                                android:textSize="12sp"/>
+                            <TextView
+                                android:id="@+id/txt_enhanced_label"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Cassava Mosaic Disease"
+                                android:textColor="@color/black"
+                                android:textSize="16sp"
+                                android:textStyle="bold"/>
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal"
+                                android:layout_marginTop="2dp"
+                                android:gravity="center_vertical">
+                                <TextView
+                                    android:id="@+id/txt_enhanced_confidence"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="96% Conf."
+                                    android:textColor="@color/accent_green"
+                                    android:textStyle="bold"
+                                    android:textSize="12sp"/>
+                                <ProgressBar
+                                    android:id="@+id/progress_enhanced_confidence"
+                                    style="?android:attr/progressBarStyleHorizontal"
+                                    android:layout_width="0dp"
+                                    android:layout_height="4dp"
+                                    android:layout_weight="1"
+                                    android:layout_marginStart="8dp"
+                                    android:layout_marginEnd="8dp"
+                                    android:progress="96"
+                                    android:progressTint="@color/accent_green"
+                                    android:progressBackgroundTint="@color/light_green_bg"/>
+                                <TextView
+                                    android:id="@+id/txt_enhanced_time"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="15ms"
+                                    android:textColor="@color/gray_text"
+                                    android:textSize="10sp"/>
+                            </LinearLayout>
+
+                            <TextView
+                                android:id="@+id/txt_enhanced_metrics"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Shape: N/A | Type: N/A | Size: N/A"
+                                android:textColor="@color/gray_text"
+                                android:textSize="10sp"
+                                android:layout_marginTop="2dp"/>
 
                             <TextView
                                 android:id="@+id/txt_model_badge"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:layout_marginTop="6dp"
+                                android:layout_marginTop="8dp"
                                 android:background="@drawable/badge_bg"
                                 android:paddingHorizontal="8dp"
                                 android:paddingVertical="2dp"
-                                android:text="AI Model"
+                                android:text="Models Loaded"
                                 android:textColor="@color/white"
                                 android:textSize="10sp"/>
 
                         </LinearLayout>
-                    </LinearLayout>
 
                     <View
                         android:layout_width="match_parent"
@@ -324,6 +454,86 @@
                         android:text="Plant resistant cultivars, select healthy stem cuttings, and destroy infected plants immediately."
                         android:textColor="@color/gray_text"
                         android:textSize="13sp"/>
+
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Model Training Metrics Overview -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/card_metrics"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="3dp"
+                app:strokeWidth="1dp"
+                app:strokeColor="#E8E8E8">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Training Performance Metrics"
+                        android:textColor="@color/black"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+                    
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="Evaluated on validation dataset during training"
+                        android:textColor="@color/gray_text"
+                        android:textSize="12sp"
+                        android:layout_marginBottom="12dp"/>
+
+                    <!-- Base Model Stats -->
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Base Model (MobileNetV3)"
+                        android:textColor="@color/black"
+                        android:textSize="14sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/txt_base_training_metrics"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Accuracy: 73.9% | Weighted F1: 0.73\nWeighted Precision: 0.77 | Recall: 0.74\nMCC: 0.61"
+                        android:textColor="@color/black"
+                        android:textSize="13sp"
+                        android:layout_marginTop="4dp"
+                        android:layout_marginBottom="8dp"/>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginBottom="8dp"
+                        android:background="#F0F0F0"/>
+
+                    <!-- Enhanced Model Stats -->
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Enhanced Model"
+                        android:textColor="@color/accent_green"
+                        android:textSize="14sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/txt_enhanced_training_metrics"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Accuracy: 84.5% | Weighted F1: 0.84\nWeighted Precision: 0.85 | Recall: 0.84\nMCC: 0.76"
+                        android:textColor="@color/black"
+                        android:textSize="13sp"
+                        android:layout_marginTop="4dp"/>
 
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>

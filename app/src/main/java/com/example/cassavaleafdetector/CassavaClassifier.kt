@@ -2,6 +2,7 @@ package com.example.cassavaleafdetector
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.os.SystemClock
 import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.support.image.ImageProcessor
 import org.tensorflow.lite.support.image.TensorImage
@@ -13,12 +14,24 @@ import java.nio.MappedByteBuffer
 import java.nio.channels.FileChannel
 
 class CassavaClassifier(private val context: Context) {
-    private var interpreter: Interpreter? = null
-    var isModelLoaded = false
+    private var baseInterpreter: Interpreter? = null
+    private var enhancedInterpreter: Interpreter? = null
+    private var visualizerInterpreter: Interpreter? = null
+
+    var isBaseModelLoaded = false
+        private set
+    var isEnhancedModelLoaded = false
+        private set
+    var isVisualizerModelLoaded = false
         private set
 
+    private var baseModelSizeKb: Long = 0
+    private var enhancedModelSizeKb: Long = 0
+
     companion object {
-        const val MODEL_PATH = "cassava.tflite"
+        const val BASE_MODEL_PATH = "model_base.tflite"
+        const val ENHANCED_MODEL_PATH = "model_enhanced.tflite"
+        const val VISUALIZER_MODEL_PATH = "model_visualizer.tflite"
         
         val LABELS = listOf(
             "Cassava Bacterial Blight (CBB)",
@@ -47,19 +60,44 @@ class CassavaClassifier(private val context: Context) {
 
     init {
         try {
-            val modelBuffer = loadModelFile()
+            val baseFd = context.assets.openFd(BASE_MODEL_PATH)
+            baseModelSizeKb = baseFd.length / 1024
+            val baseBuffer = loadModelFile(BASE_MODEL_PATH)
             val options = Interpreter.Options()
-            interpreter = Interpreter(modelBuffer, options)
-            isModelLoaded = true
+            baseInterpreter = Interpreter(baseBuffer, options)
+            isBaseModelLoaded = true
         } catch (e: Exception) {
             e.printStackTrace()
-            isModelLoaded = false
+            isBaseModelLoaded = false
+        }
+
+        try {
+            val enhancedFd = context.assets.openFd(ENHANCED_MODEL_PATH)
+            enhancedModelSizeKb = enhancedFd.length / 1024
+            val enhancedBuffer = loadModelFile(ENHANCED_MODEL_PATH)
+            val options = Interpreter.Options()
+            enhancedInterpreter = Interpreter(enhancedBuffer, options)
+            isEnhancedModelLoaded = true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            isEnhancedModelLoaded = false
+        }
+
+        try {
+            val visualizerFd = context.assets.openFd(VISUALIZER_MODEL_PATH)
+            val visualizerBuffer = loadModelFile(VISUALIZER_MODEL_PATH)
+            val options = Interpreter.Options()
+            visualizerInterpreter = Interpreter(visualizerBuffer, options)
+            isVisualizerModelLoaded = true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            isVisualizerModelLoaded = false
         }
     }
 
     @Throws(IOException::class)
-    private fun loadModelFile(): MappedByteBuffer {
-        val fileDescriptor = context.assets.openFd(MODEL_PATH)
+    private fun loadModelFile(path: String): MappedByteBuffer {
+        val fileDescriptor = context.assets.openFd(path)
         val inputStream = FileInputStream(fileDescriptor.fileDescriptor)
         val fileChannel = inputStream.channel
         val startOffset = fileDescriptor.startOffset
@@ -67,23 +105,53 @@ class CassavaClassifier(private val context: Context) {
         return fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength)
     }
 
-    data class DetectionResult(
+    data class ModelResult(
         val label: String,
         val confidence: Float,
-        val description: String,
-        val treatment: String,
-        val index: Int
+        val index: Int,
+        val inferenceTimeMs: Long,
+        val modelSizeKb: Long = 0,
+        val inputShape: String = "",
+        val dataType: String = "",
+        val warning: String? = null
     )
 
-    fun classifyImage(bitmap: Bitmap): DetectionResult {
-        if (!isModelLoaded || interpreter == null) {
-            // Simulated/Mock classification for testing
-            return simulateClassification(bitmap)
+    data class ComparisonResult(
+        val baseResult: ModelResult,
+        val enhancedResult: ModelResult,
+        val description: String,
+        val treatment: String,
+        val enhancedBitmap: Bitmap? = null
+    )
+
+    fun classifyImage(bitmap: Bitmap): ComparisonResult {
+        if (!isBaseModelLoaded && !isEnhancedModelLoaded) {
+            return simulateComparisonClassification(bitmap)
         }
 
+        val baseResult = runModel(baseInterpreter, bitmap, isBaseModelLoaded, baseModelSizeKb) ?: simulateSingleModel(bitmap, isBase = true)
+        val enhancedResult = runModel(enhancedInterpreter, bitmap, isEnhancedModelLoaded, enhancedModelSizeKb) ?: simulateSingleModel(bitmap, isBase = false)
+
+        val enhancedBitmap = if (isVisualizerModelLoaded && visualizerInterpreter != null) {
+            runVisualizer(visualizerInterpreter!!, bitmap)
+        } else null
+
+        var finalDescription = DESCRIPTIONS[enhancedResult.index]
+        if (enhancedResult.warning != null) {
+            finalDescription = "⚠️ ${enhancedResult.warning}\n\n$finalDescription"
+        }
+
+        return ComparisonResult(
+            baseResult = baseResult,
+            enhancedResult = enhancedResult,
+            description = finalDescription,
+            treatment = TREATMENTS[enhancedResult.index],
+            enhancedBitmap = enhancedBitmap
+        )
+    }
+
+    private fun runVisualizer(interpreter: Interpreter, bitmap: Bitmap): Bitmap? {
         try {
-            // TFLite Image Processing
-            // Assume the model takes a 224x224 input image (MobileNet standard)
             val imageProcessor = ImageProcessor.Builder()
                 .add(ResizeOp(224, 224, ResizeOp.ResizeMethod.BILINEAR))
                 .build()
@@ -92,10 +160,55 @@ class CassavaClassifier(private val context: Context) {
             tensorImage.load(bitmap)
             tensorImage = imageProcessor.process(tensorImage)
 
-            // Output tensor shape of [1, 5] for the 5 classes
-            val outputBuffer = TensorBuffer.createFixedSize(intArrayOf(1, 5), org.tensorflow.lite.DataType.FLOAT32)
+            val outputBuffer = TensorBuffer.createFixedSize(intArrayOf(1, 224, 224, 3), org.tensorflow.lite.DataType.FLOAT32)
 
-            interpreter?.run(tensorImage.buffer, outputBuffer.buffer.rewind())
+            interpreter.run(tensorImage.buffer, outputBuffer.buffer.rewind())
+
+            val floatArray = outputBuffer.floatArray
+            val outBitmap = Bitmap.createBitmap(224, 224, Bitmap.Config.ARGB_8888)
+            val pixels = IntArray(224 * 224)
+            for (i in 0 until 224 * 224) {
+                val r = (floatArray[i * 3] * 255).toInt().coerceIn(0, 255)
+                val g = (floatArray[i * 3 + 1] * 255).toInt().coerceIn(0, 255)
+                val b = (floatArray[i * 3 + 2] * 255).toInt().coerceIn(0, 255)
+                pixels[i] = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
+            }
+            outBitmap.setPixels(pixels, 0, 224, 0, 0, 224, 224)
+            return outBitmap
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return null
+        }
+    }
+
+    private fun runModel(interpreter: Interpreter?, bitmap: Bitmap, isLoaded: Boolean, modelSizeKb: Long): ModelResult? {
+        if (!isLoaded || interpreter == null) return null
+
+        try {
+            val startTime = SystemClock.uptimeMillis()
+            
+            val inputTensor = interpreter.getInputTensor(0)
+            val inputShapeStr = inputTensor.shape().joinToString("x")
+            val inputDataType = inputTensor.dataType().name
+
+            val imageProcessor = ImageProcessor.Builder()
+                .add(ResizeOp(224, 224, ResizeOp.ResizeMethod.BILINEAR))
+                .build()
+
+            var tensorImage = TensorImage(org.tensorflow.lite.DataType.FLOAT32)
+            tensorImage.load(bitmap)
+            tensorImage = imageProcessor.process(tensorImage)
+
+            val outputTensor = interpreter.getOutputTensor(0)
+            val outputShape = outputTensor.shape()
+            val numClasses = outputShape[1]
+            
+            val outputBuffer = TensorBuffer.createFixedSize(outputShape, outputTensor.dataType())
+
+            interpreter.run(tensorImage.buffer, outputBuffer.buffer.rewind())
+
+            val endTime = SystemClock.uptimeMillis()
+            val inferenceTime = endTime - startTime
 
             val outputArray = outputBuffer.floatArray
             var maxIndex = 0
@@ -106,33 +219,89 @@ class CassavaClassifier(private val context: Context) {
                     maxIndex = i
                 }
             }
-
-            // Simple softMax / normalization logic to display percentage nicely
-            var sum = 0f
-            val expArray = FloatArray(outputArray.size)
-            for (i in outputArray.indices) {
-                // Shift values for numerical stability in case of raw logits
-                expArray[i] = Math.exp((outputArray[i] - maxVal).toDouble()).toFloat()
-                sum += expArray[i]
+            
+            // If the model is a 3-class model (CBB, CBSD, Healthy)
+            // We map 0 -> CBB (0), 1 -> CBSD (1), 2 -> Healthy (4)
+            val mappedIndex = if (numClasses == 3) {
+                when (maxIndex) {
+                    0 -> 0 // CBB
+                    1 -> 1 // CBSD
+                    2 -> 4 // Healthy
+                    else -> 4
+                }
+            } else {
+                // 5-class model alphabetical order: 0=CBB, 1=CBSD, 2=Healthy, 3=CMD, 4=CGM
+                // App LABELS order: 0=CBB, 1=CBSD, 2=CGM, 3=CMD, 4=Healthy
+                when (maxIndex) {
+                    0 -> 0 // CBB
+                    1 -> 1 // CBSD
+                    2 -> 4 // Healthy
+                    3 -> 3 // CMD
+                    4 -> 2 // CGM
+                    else -> 4
+                }
             }
-            val confidence = if (sum > 0f) expArray[maxIndex] / sum else 0.5f
 
-            return DetectionResult(
-                label = LABELS[maxIndex],
+            var rawSum = 0f
+            for (v in outputArray) {
+                rawSum += v
+            }
+            
+            val probs = FloatArray(outputArray.size)
+            if (rawSum > 0.9f && rawSum < 1.1f && maxVal <= 1.0f) {
+                for (i in outputArray.indices) probs[i] = outputArray[i]
+            } else if (maxVal > 1.0f && rawSum > 10f) {
+                for (i in outputArray.indices) probs[i] = outputArray[i] / 255.0f
+            } else {
+                var expSum = 0f
+                for (v in outputArray) {
+                    expSum += Math.exp((v - maxVal).toDouble()).toFloat()
+                }
+                for (i in outputArray.indices) {
+                    probs[i] = (Math.exp((outputArray[i] - maxVal).toDouble()) / expSum).toFloat()
+                }
+            }
+            
+            val confidence = probs[maxIndex]
+            
+            var warning: String? = null
+            if (numClasses == 5 && maxIndex == 2) {
+                if (probs[3] > 0.35f) {
+                    warning = "Likely Healthy, but watch out for Mosaic Disease (${(probs[3]*100).toInt()}% probability detected)."
+                } else if (probs[4] > 0.35f) {
+                    warning = "Likely Healthy, but watch out for Green Mottle (${(probs[4]*100).toInt()}% probability detected)."
+                }
+            }
+
+            return ModelResult(
+                label = LABELS[mappedIndex],
                 confidence = confidence.coerceIn(0.5f, 0.99f),
-                description = DESCRIPTIONS[maxIndex],
-                treatment = TREATMENTS[maxIndex],
-                index = maxIndex
+                index = mappedIndex,
+                inferenceTimeMs = inferenceTime,
+                modelSizeKb = modelSizeKb,
+                inputShape = inputShapeStr,
+                dataType = inputDataType,
+                warning = warning
             )
-
         } catch (e: Exception) {
             e.printStackTrace()
-            return simulateClassification(bitmap)
+            return null
         }
     }
 
-    private fun simulateClassification(bitmap: Bitmap): DetectionResult {
-        // Generate a deterministic but realistic result based on image content (e.g. check average color)
+    private fun simulateComparisonClassification(bitmap: Bitmap): ComparisonResult {
+        val baseRes = simulateSingleModel(bitmap, true)
+        val enhancedRes = simulateSingleModel(bitmap, false)
+
+        return ComparisonResult(
+            baseResult = baseRes,
+            enhancedResult = enhancedRes,
+            description = DESCRIPTIONS[enhancedRes.index],
+            treatment = TREATMENTS[enhancedRes.index]
+        )
+    }
+
+    private fun simulateSingleModel(bitmap: Bitmap, isBase: Boolean): ModelResult {
         var redSum = 0L
         var greenSum = 0L
         var blueSum = 0L
@@ -157,37 +326,40 @@ class CassavaClassifier(private val context: Context) {
         val b = if (sampleCount > 0) blueSum / sampleCount else 0L
 
         val index: Int
-        val confidence: Float
+        var confidence: Float
         
-        // Basic RGB leaf diagnostic heuristics:
         if (g > 100 && r < 125 && b < 100) {
-            // green-dominated: Healthy
             index = 4
             confidence = 0.85f + (r % 15) / 100f
         } else if (r > 130 && g > 130 && b < 110) {
-            // yellow/chlorotic: CMD
             index = 3
             confidence = 0.80f + (g % 20) / 100f
         } else if (r > 115 && g < 110 && b < 90) {
-            // brown/wilted: CBB
             index = 0
             confidence = 0.73f + (r % 25) / 100f
         } else if (r > 120 && g > 105 && b < 85) {
-            // brown-yellow: CBSD
             index = 1
             confidence = 0.77f + (b % 20) / 100f
         } else {
-            // CGM
             index = 2
             confidence = 0.71f + (g % 25) / 100f
         }
 
-        return DetectionResult(
+        // Simulate difference: Enhanced model has slightly higher confidence and faster inference
+        val infTime = if (isBase) (30L..80L).random() else (15L..45L).random()
+        val modelSize = if (isBase) 4500L else 12500L
+        if (isBase) {
+            confidence *= 0.95f 
+        }
+
+        return ModelResult(
             label = LABELS[index],
             confidence = confidence.coerceIn(0.5f, 0.99f),
-            description = DESCRIPTIONS[index],
-            treatment = TREATMENTS[index],
-            index = index
+            index = index,
+            inferenceTimeMs = infTime,
+            modelSizeKb = modelSize,
+            inputShape = "224x224x3",
+            dataType = "FLOAT32"
         )
     }
 }

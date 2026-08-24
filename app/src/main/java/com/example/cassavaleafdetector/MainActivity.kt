@@ -50,9 +50,19 @@ class MainActivity : AppCompatActivity() {
     private lateinit var cardGallery: View
     private lateinit var cardResult: View
     private lateinit var imgScanned: ImageView
-    private lateinit var txtDiseaseLabel: TextView
-    private lateinit var txtConfidence: TextView
-    private lateinit var progressConfidence: ProgressBar
+    private lateinit var imgEnhanced: ImageView
+    private lateinit var txtBaseLabel: TextView
+    private lateinit var txtBaseConfidence: TextView
+    private lateinit var progressBaseConfidence: ProgressBar
+    private lateinit var txtBaseTime: TextView
+    private lateinit var txtBaseMetrics: TextView
+    
+    private lateinit var txtEnhancedLabel: TextView
+    private lateinit var txtEnhancedConfidence: TextView
+    private lateinit var progressEnhancedConfidence: ProgressBar
+    private lateinit var txtEnhancedTime: TextView
+    private lateinit var txtEnhancedMetrics: TextView
+    
     private lateinit var txtDiseaseDesc: TextView
     private lateinit var txtDiseaseTreatment: TextView
     private lateinit var cameraContainer: View
@@ -128,9 +138,18 @@ class MainActivity : AppCompatActivity() {
         cardGallery = findViewById(R.id.card_gallery)
         cardResult = findViewById(R.id.card_result)
         imgScanned = findViewById(R.id.img_scanned)
-        txtDiseaseLabel = findViewById(R.id.txt_disease_label)
-        txtConfidence = findViewById(R.id.txt_confidence)
-        progressConfidence = findViewById(R.id.progress_confidence)
+        imgEnhanced = findViewById(R.id.img_enhanced)
+        txtBaseLabel = findViewById(R.id.txt_base_label)
+        txtBaseConfidence = findViewById(R.id.txt_base_confidence)
+        progressBaseConfidence = findViewById(R.id.progress_base_confidence)
+        txtBaseTime = findViewById(R.id.txt_base_time)
+        txtBaseMetrics = findViewById(R.id.txt_base_metrics)
+        
+        txtEnhancedLabel = findViewById(R.id.txt_enhanced_label)
+        txtEnhancedConfidence = findViewById(R.id.txt_enhanced_confidence)
+        progressEnhancedConfidence = findViewById(R.id.progress_enhanced_confidence)
+        txtEnhancedTime = findViewById(R.id.txt_enhanced_time)
+        txtEnhancedMetrics = findViewById(R.id.txt_enhanced_metrics)
         txtDiseaseDesc = findViewById(R.id.txt_disease_desc)
         txtDiseaseTreatment = findViewById(R.id.txt_disease_treatment)
         cameraContainer = findViewById(R.id.camera_container)
@@ -142,7 +161,7 @@ class MainActivity : AppCompatActivity() {
         btnClearHistory = findViewById(R.id.btn_clear_history)
         
         findViewById<TextView>(R.id.txt_model_badge).text = 
-            if (classifier.isModelLoaded) "CropNet TFLite" else "Smart Diagnostics"
+            if (classifier.isBaseModelLoaded && classifier.isEnhancedModelLoaded) "TFLite Models" else "Smart Diagnostics"
     }
 
     private fun setupRecyclerView() {
@@ -298,35 +317,61 @@ class MainActivity : AppCompatActivity() {
         // Show UI results
         cardResult.visibility = View.VISIBLE
         imgScanned.setImageBitmap(bitmap)
-        txtDiseaseLabel.text = result.label
         
-        val confPercent = result.confidence * 100
-        txtConfidence.text = String.format("%.0f%% Confidence", confPercent)
-        progressConfidence.progress = confPercent.toInt()
+        if (result.enhancedBitmap != null) {
+            imgEnhanced.setImageBitmap(result.enhancedBitmap)
+        } else {
+            imgEnhanced.setImageBitmap(bitmap)
+        }
         
-        // Change colors depending on disease vs healthy
-        val labelColor = when (result.index) {
+        // Base Model Results
+        txtBaseLabel.text = result.baseResult.label
+        val baseConfPercent = result.baseResult.confidence * 100
+        txtBaseConfidence.text = String.format("%.0f%% Conf.", baseConfPercent)
+        progressBaseConfidence.progress = baseConfPercent.toInt()
+        txtBaseTime.text = "${result.baseResult.inferenceTimeMs}ms"
+        txtBaseMetrics.text = "Shape: ${result.baseResult.inputShape} | Type: ${result.baseResult.dataType} | Size: ${result.baseResult.modelSizeKb}KB"
+        
+        val baseLabelColor = when (result.baseResult.index) {
             4 -> R.color.color_healthy
             0 -> R.color.color_cbb
             1 -> R.color.color_cbsd
             2 -> R.color.color_cgm
             else -> R.color.color_cmd
         }
-        txtConfidence.setTextColor(getColor(labelColor))
-        progressConfidence.progressTintList = ContextCompat.getColorStateList(this, labelColor)
+        txtBaseConfidence.setTextColor(getColor(baseLabelColor))
+        progressBaseConfidence.progressTintList = ContextCompat.getColorStateList(this, baseLabelColor)
+
+        // Enhanced Model Results
+        txtEnhancedLabel.text = result.enhancedResult.label
+        val enhancedConfPercent = result.enhancedResult.confidence * 100
+        txtEnhancedConfidence.text = String.format("%.0f%% Conf.", enhancedConfPercent)
+        progressEnhancedConfidence.progress = enhancedConfPercent.toInt()
+        txtEnhancedTime.text = "${result.enhancedResult.inferenceTimeMs}ms"
+        txtEnhancedMetrics.text = "Shape: ${result.enhancedResult.inputShape} | Type: ${result.enhancedResult.dataType} | Size: ${result.enhancedResult.modelSizeKb}KB"
+        
+        val enhancedLabelColor = when (result.enhancedResult.index) {
+            4 -> R.color.color_healthy
+            0 -> R.color.color_cbb
+            1 -> R.color.color_cbsd
+            2 -> R.color.color_cgm
+            else -> R.color.color_cmd
+        }
+        txtEnhancedConfidence.setTextColor(getColor(enhancedLabelColor))
+        progressEnhancedConfidence.progressTintList = ContextCompat.getColorStateList(this, enhancedLabelColor)
 
         txtDiseaseDesc.text = result.description
         txtDiseaseTreatment.text = result.treatment
 
-        // Add to history
+        // Add to history (using enhanced model as primary result for logging)
         val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date())
         val historyItem = HistoryItem(
             id = UUID.randomUUID().toString(),
-            label = result.label,
-            confidence = result.confidence,
+            label = result.enhancedResult.label,
+            confidence = result.enhancedResult.confidence,
             date = dateStr,
             imagePath = imagePath,
-            index = result.index
+            index = result.enhancedResult.index
         )
         
         historyList.add(0, historyItem)
