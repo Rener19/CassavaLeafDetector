@@ -208,74 +208,85 @@
                     android:padding="16.000000dp"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content">
-                    <androidx.constraintlayout.widget.ConstraintLayout
+                    <HorizontalScrollView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:scrollbars="none"
+                        android:clipToPadding="false"
                         android:layout_marginBottom="16.000000dp">
 
-                        <TextView
-                            android:textSize="12.000000sp"
-                            android:textColor="@color/gray_text"
-                            android:id="@+id/label_original"
+                        <LinearLayout
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginBottom="6.000000dp"
-                            android:text="Original"
-                            app:layout_constraintBottom_toTopOf="@id/card_scanned"
-                            app:layout_constraintEnd_toEndOf="@id/card_scanned"
-                            app:layout_constraintStart_toStartOf="@id/card_scanned"
-                            app:layout_constraintTop_toTopOf="parent" />
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
 
-                        <com.google.android.material.card.MaterialCardView
-                            android:id="@+id/card_scanned"
-                            android:layout_width="0.000000dp"
-                            android:layout_height="0.000000dp"
-                            app:cardCornerRadius="12.000000dp"
-                            app:layout_constraintDimensionRatio="1:1"
-                            app:layout_constraintEnd_toStartOf="@id/card_enhanced"
-                            app:layout_constraintStart_toStartOf="parent"
-                            app:layout_constraintTop_toBottomOf="@id/label_original"
-                            app:strokeColor="#ffe0e0e0"
-                            app:strokeWidth="1.000000dp">
-                            <ImageView
-                                android:id="@+id/img_scanned"
-                                android:layout_width="match_parent"
-                                android:layout_height="match_parent"
-                                android:scaleType="fitCenter" />
-                        </com.google.android.material.card.MaterialCardView>
+                            <!-- Original Image Section -->
+                            <LinearLayout
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:orientation="vertical"
+                                android:gravity="center_horizontal"
+                                android:layout_marginEnd="12.000000dp">
 
-                        <TextView
-                            android:textSize="12.000000sp"
-                            android:textStyle="bold"
-                            android:textColor="@color/accent_green"
-                            android:id="@+id/label_enhanced"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginBottom="6.000000dp"
-                            android:text="D-CLAHE View"
-                            app:layout_constraintBottom_toTopOf="@id/card_enhanced"
-                            app:layout_constraintEnd_toEndOf="@id/card_enhanced"
-                            app:layout_constraintStart_toStartOf="@id/card_enhanced"
-                            app:layout_constraintTop_toTopOf="parent" />
+                                <TextView
+                                    android:textSize="12.000000sp"
+                                    android:textColor="@color/gray_text"
+                                    android:id="@+id/label_original"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginBottom="6.000000dp"
+                                    android:text="Original" />
 
-                        <com.google.android.material.card.MaterialCardView
-                            android:id="@+id/card_enhanced"
-                            android:layout_width="0.000000dp"
-                            android:layout_height="0.000000dp"
-                            app:cardCornerRadius="12.000000dp"
-                            app:layout_constraintDimensionRatio="1:1"
-                            app:layout_constraintEnd_toEndOf="parent"
-                            app:layout_constraintStart_toEndOf="@id/card_scanned"
-                            app:layout_constraintTop_toBottomOf="@id/label_enhanced"
-                            app:strokeColor="#ffe0e0e0"
-                            app:strokeWidth="1.000000dp">
-                            <ImageView
-                                android:id="@+id/img_enhanced"
-                                android:layout_width="match_parent"
-                                android:layout_height="match_parent"
-                                android:scaleType="fitCenter" />
-                        </com.google.android.material.card.MaterialCardView>
-                    </androidx.constraintlayout.widget.ConstraintLayout>
+                                <com.google.android.material.card.MaterialCardView
+                                    android:id="@+id/card_scanned"
+                                    android:layout_width="190.000000dp"
+                                    android:layout_height="190.000000dp"
+                                    app:cardCornerRadius="12.000000dp"
+                                    app:strokeColor="#ffe0e0e0"
+                                    app:strokeWidth="1.000000dp">
+                                    <ImageView
+                                        android:id="@+id/img_scanned"
+                                        android:layout_width="match_parent"
+                                        android:layout_height="match_parent"
+                                        android:scaleType="fitXY" />
+                                </com.google.android.material.card.MaterialCardView>
+                            </LinearLayout>
+
+                            <!-- D-CLAHE Image Section -->
+                            <LinearLayout
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:orientation="vertical"
+                                android:gravity="center_horizontal">
+
+                                <TextView
+                                    android:textSize="12.000000sp"
+                                    android:textStyle="bold"
+                                    android:textColor="@color/accent_green"
+                                    android:id="@+id/label_enhanced"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginBottom="6.000000dp"
+                                    android:text="D-CLAHE View" />
+
+                                <com.google.android.material.card.MaterialCardView
+                                    android:id="@+id/card_enhanced"
+                                    android:layout_width="190.000000dp"
+                                    android:layout_height="190.000000dp"
+                                    app:cardCornerRadius="12.000000dp"
+                                    app:strokeColor="#ffe0e0e0"
+                                    app:strokeWidth="1.000000dp">
+                                    <ImageView
+                                        android:id="@+id/img_enhanced"
+                                        android:layout_width="match_parent"
+                                        android:layout_height="match_parent"
+                                        android:scaleType="fitXY" />
+                                </com.google.android.material.card.MaterialCardView>
+                            </LinearLayout>
+
+                        </LinearLayout>
+                    </HorizontalScrollView>
                     <TextView
                         android:textSize="20.000000sp"
                         android:textStyle="bold"
