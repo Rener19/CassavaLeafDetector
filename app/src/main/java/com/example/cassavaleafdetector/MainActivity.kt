@@ -236,22 +236,38 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupRecyclerViews() {
         recyclerHistory.layoutManager = LinearLayoutManager(this)
-        historyAdapter = HistoryAdapter(historyList) { historyItem ->
-            if (historyItem.imagePath.isNotEmpty()) {
-                val file = File(historyItem.imagePath)
-                if (file.exists()) {
-                    val bitmap = BitmapFactory.decodeFile(file.absolutePath)
-                    if (bitmap != null) {
-                        processDiagnosis(bitmap, historyItem.imagePath, false)
+        historyAdapter = HistoryAdapter(
+            items = historyList,
+            onItemClick = { historyItem ->
+                if (historyItem.imagePath.isNotEmpty()) {
+                    val file = File(historyItem.imagePath)
+                    if (file.exists()) {
+                        val bitmap = BitmapFactory.decodeFile(file.absolutePath)
+                        if (bitmap != null) {
+                            processDiagnosis(bitmap, historyItem.imagePath, false)
+                        }
                     }
                 }
+            },
+            onDeleteClick = { historyItem ->
+                deleteHistoryItem(historyItem)
             }
-        }
+        )
         recyclerHistory.adapter = historyAdapter
         
         recyclerBatchHistory?.layoutManager = LinearLayoutManager(this)
         batchHistoryAdapter = BatchHistoryAdapter(batchHistoryList)
         recyclerBatchHistory?.adapter = batchHistoryAdapter
+    }
+
+    private fun deleteHistoryItem(item: HistoryItem) {
+        val index = historyList.indexOfFirst { it.id == item.id }
+        if (index != -1) {
+            historyList.removeAt(index)
+            saveHistoryToSharedPrefs()
+            updateHistoryUI()
+            Toast.makeText(this, "Item removed from history", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun setupClickListeners() {

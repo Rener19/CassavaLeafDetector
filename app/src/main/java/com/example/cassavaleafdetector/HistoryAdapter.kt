@@ -12,9 +12,12 @@ import java.util.concurrent.Executors
 import android.os.Handler
 import android.os.Looper
 
+import android.widget.ImageButton
+
 class HistoryAdapter(
     private var items: List<HistoryItem>,
-    private val onItemClick: (HistoryItem) -> Unit
+    private val onItemClick: (HistoryItem) -> Unit,
+    private val onDeleteClick: (HistoryItem) -> Unit = {}
 ) : RecyclerView.Adapter<HistoryAdapter.ViewHolder>() {
 
     private val executor = Executors.newFixedThreadPool(4)
@@ -25,6 +28,7 @@ class HistoryAdapter(
         val txtLabel: TextView = view.findViewById(R.id.txt_history_label)
         val txtDate: TextView = view.findViewById(R.id.txt_history_date)
         val txtConfidence: TextView = view.findViewById(R.id.txt_history_confidence)
+        val btnDelete: ImageButton? = view.findViewById(R.id.btn_delete_item)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
@@ -96,6 +100,7 @@ class HistoryAdapter(
         }
 
         holder.itemView.setOnClickListener { onItemClick(item) }
+        holder.btnDelete?.setOnClickListener { onDeleteClick(item) }
     }
 
     override fun getItemCount() = items.size
