@@ -1,0 +1,442 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.core.widget.NestedScrollView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@@0x7f080167"
+    android:paddingBottom="40.000000dp"
+    android:clipToPadding="false"
+    android:layout_width="-1"
+    android:layout_height="-1"
+    app:layout_behavior="@@0x7f10001d">
+    <LinearLayout
+        android:orientation="1"
+        android:padding="16.000000dp"
+        android:layout_width="-1"
+        android:layout_height="-2">
+        <TextView
+            android:textSize="18.000000sp"
+            android:textStyle="0x00000001"
+            android:textColor="@@0x7f050022"
+            android:layout_width="-2"
+            android:layout_height="-2"
+            android:layout_marginBottom="12.000000dp"
+            android:text="Start Diagnosis" />
+        <Button
+            android:id="@@0x7f080072"
+            android:layout_width="-1"
+            android:layout_height="-2"
+            android:layout_marginBottom="16.000000dp"
+            android:text="Model Metrics"
+            android:backgroundTint="@@0x7f050019"
+            app:cornerRadius="8.000000dp" />
+        <LinearLayout
+            android:orientation="0"
+            android:layout_width="-1"
+            android:layout_height="-2"
+            android:layout_marginBottom="24.000000dp"
+            android:baselineAligned="false"
+            android:weightSum="2">
+            <com.google.android.material.card.MaterialCardView
+                android:id="@@0x7f080077"
+                android:focusable="true"
+                android:clickable="true"
+                android:layout_width="0.000000dp"
+                android:layout_height="-2"
+                android:layout_weight="1"
+                android:layout_marginEnd="8.000000dp"
+                app:cardCornerRadius="16.000000dp"
+                app:cardElevation="2.000000dp"
+                app:rippleColor="@@0x7f050068"
+                app:strokeColor="@@0x7f0503a6"
+                app:strokeWidth="1.000000dp">
+                <LinearLayout
+                    android:gravity="0x00000011"
+                    android:orientation="1"
+                    android:padding="20.000000dp"
+                    android:layout_width="-1"
+                    android:layout_height="-2">
+                    <ImageView
+                        android:layout_width="48.000000dp"
+                        android:layout_height="48.000000dp"
+                        android:src="@@0x01080037"
+                        app:tint="@@0x7f0503a6" />
+                    <TextView
+                        android:textStyle="0x00000001"
+                        android:textColor="@@0x7f0503a6"
+                        android:layout_width="-2"
+                        android:layout_height="-2"
+                        android:layout_marginTop="12.000000dp"
+                        android:text="Take Photo" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+            <com.google.android.material.card.MaterialCardView
+                android:id="@@0x7f080079"
+                android:focusable="true"
+                android:clickable="true"
+                android:layout_width="0.000000dp"
+                android:layout_height="-2"
+                android:layout_weight="1"
+                android:layout_marginStart="8.000000dp"
+                app:cardCornerRadius="16.000000dp"
+                app:cardElevation="2.000000dp"
+                app:rippleColor="@@0x7f050068"
+                app:strokeColor="@@0x7f0503a6"
+                app:strokeWidth="1.000000dp">
+                <LinearLayout
+                    android:gravity="0x00000011"
+                    android:orientation="1"
+                    android:padding="20.000000dp"
+                    android:layout_width="-1"
+                    android:layout_height="-2">
+                    <ImageView
+                        android:layout_width="48.000000dp"
+                        android:layout_height="48.000000dp"
+                        android:src="@@0x0108003f"
+                        app:tint="@@0x7f0503a6" />
+                    <TextView
+                        android:textStyle="0x00000001"
+                        android:textColor="@@0x7f0503a6"
+                        android:layout_width="-2"
+                        android:layout_height="-2"
+                        android:layout_marginTop="12.000000dp"
+                        android:text="Upload Image" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+        </LinearLayout>
+        <com.google.android.material.card.MaterialCardView
+            android:id="@@0x7f080075"
+            android:visibility="2"
+            android:layout_width="-1"
+            android:layout_height="-2"
+            android:layout_marginBottom="24.000000dp"
+            app:cardCornerRadius="16.000000dp"
+            app:cardElevation="4.000000dp"
+            app:strokeWidth="0.000000dp">
+            <androidx.constraintlayout.widget.ConstraintLayout
+                android:background="@@0x7f050022"
+                android:layout_width="-1"
+                android:layout_height="400.000000dp">
+                <androidx.camera.view.PreviewView
+                    android:id="@@0x7f080199"
+                    android:layout_width="-1"
+                    android:layout_height="-1" />
+                <View
+                    android:background="#66000000"
+                    android:layout_width="-1"
+                    android:layout_height="80.000000dp"
+                    app:layout_constraintBottom_toBottomOf="0" />
+                <ImageButton
+                    android:id="@@0x7f080067"
+                    android:background="@@0x0106000d"
+                    android:layout_width="64.000000dp"
+                    android:layout_height="64.000000dp"
+                    android:layout_marginBottom="16.000000dp"
+                    android:src="@@0x01080037"
+                    android:scaleType="3"
+                    app:layout_constraintBottom_toBottomOf="0"
+                    app:layout_constraintEnd_toEndOf="0"
+                    app:layout_constraintStart_toStartOf="0"
+                    app:tint="@@0x7f0503bd" />
+                <ImageButton
+                    android:id="@@0x7f08006a"
+                    android:background="@@0x0106000d"
+                    android:layout_width="48.000000dp"
+                    android:layout_height="48.000000dp"
+                    android:layout_margin="16.000000dp"
+                    android:src="@@0x01080038"
+                    app:layout_constraintEnd_toEndOf="0"
+                    app:layout_constraintTop_toTopOf="0"
+                    app:tint="@@0x7f0503bd" />
+            </androidx.constraintlayout.widget.ConstraintLayout>
+        </com.google.android.material.card.MaterialCardView>
+        <com.google.android.material.card.MaterialCardView
+            android:id="@@0x7f08007a"
+            android:visibility="2"
+            android:layout_width="-1"
+            android:layout_height="-2"
+            android:layout_marginBottom="24.000000dp"
+            app:cardCornerRadius="16.000000dp"
+            app:cardElevation="4.000000dp"
+            app:strokeWidth="0.000000dp">
+            <LinearLayout
+                android:orientation="1"
+                android:layout_width="-1"
+                android:layout_height="-2">
+                <LinearLayout
+                    android:gravity="0x00000010"
+                    android:orientation="0"
+                    android:background="@@0x7f050068"
+                    android:padding="16.000000dp"
+                    android:layout_width="-1"
+                    android:layout_height="-2">
+                    <ImageView
+                        android:layout_width="24.000000dp"
+                        android:layout_height="24.000000dp"
+                        android:src="@@0x0108009b"
+                        app:tint="@@0x7f0503a6" />
+                    <TextView
+                        android:textSize="16.000000sp"
+                        android:textStyle="0x00000001"
+                        android:textColor="@@0x7f0503a7"
+                        android:layout_width="-2"
+                        android:layout_height="-2"
+                        android:text="Analysis Complete"
+                        android:layout_marginStart="8.000000dp" />
+                    <View
+                        android:layout_width="0.000000dp"
+                        android:layout_height="0.000000dp"
+                        android:layout_weight="1" />
+                    <TextView
+                        android:textSize="10.000000sp"
+                        android:textStyle="0x00000001"
+                        android:textColor="@@0x7f0503bd"
+                        android:id="@@0x7f080233"
+                        android:background="@@0x7f07007a"
+                        android:paddingLeft="8.000000dp"
+                        android:paddingTop="4.000000dp"
+                        android:paddingRight="8.000000dp"
+                        android:paddingBottom="4.000000dp"
+                        android:layout_width="-2"
+                        android:layout_height="-2"
+                        android:text="AI Model"
+                        android:paddingHorizontal="8.000000dp"
+                        android:paddingVertical="4.000000dp" />
+                </LinearLayout>
+                <LinearLayout
+                    android:orientation="1"
+                    android:padding="20.000000dp"
+                    android:layout_width="-1"
+                    android:layout_height="-2">
+                    <androidx.constraintlayout.widget.ConstraintLayout
+                        android:layout_width="-1"
+                        android:layout_height="-2"
+                        android:layout_marginBottom="20.000000dp">
+                        <TextView
+                            android:textSize="12.000000sp"
+                            android:textColor="@@0x7f050064"
+                            android:id="@@0x7f08010b"
+                            android:layout_width="-2"
+                            android:layout_height="-2"
+                            android:layout_marginBottom="6.000000dp"
+                            android:text="Original"
+                            app:layout_constraintBottom_toTopOf="@@0x7f08007b"
+                            app:layout_constraintEnd_toEndOf="@@0x7f08007b"
+                            app:layout_constraintStart_toStartOf="@@0x7f08007b"
+                            app:layout_constraintTop_toTopOf="0" />
+                        <com.google.android.material.card.MaterialCardView
+                            android:id="@@0x7f08007b"
+                            android:layout_width="0.000000dp"
+                            android:layout_height="0.000000dp"
+                            android:layout_marginEnd="6.000000dp"
+                            app:cardCornerRadius="12.000000dp"
+                            app:layout_constraintDimensionRatio="1:1"
+                            app:layout_constraintEnd_toStartOf="@@0x7f080078"
+                            app:layout_constraintStart_toStartOf="0"
+                            app:layout_constraintTop_toBottomOf="@@0x7f08010b"
+                            app:strokeColor="#ffe0e0e0"
+                            app:strokeWidth="1.000000dp">
+                            <ImageView
+                                android:id="@@0x7f0800ff"
+                                android:layout_width="-1"
+                                android:layout_height="-1"
+                                android:scaleType="6" />
+                        </com.google.android.material.card.MaterialCardView>
+                        <TextView
+                            android:textSize="12.000000sp"
+                            android:textStyle="0x00000001"
+                            android:textColor="@@0x7f050019"
+                            android:id="@@0x7f08010a"
+                            android:layout_width="-2"
+                            android:layout_height="-2"
+                            android:layout_marginBottom="6.000000dp"
+                            android:text="D-CLAHE View"
+                            app:layout_constraintBottom_toTopOf="@@0x7f080078"
+                            app:layout_constraintEnd_toEndOf="@@0x7f080078"
+                            app:layout_constraintStart_toStartOf="@@0x7f080078"
+                            app:layout_constraintTop_toTopOf="0" />
+                        <com.google.android.material.card.MaterialCardView
+                            android:id="@@0x7f080078"
+                            android:layout_width="0.000000dp"
+                            android:layout_height="0.000000dp"
+                            android:layout_marginStart="6.000000dp"
+                            app:cardCornerRadius="12.000000dp"
+                            app:layout_constraintDimensionRatio="1:1"
+                            app:layout_constraintEnd_toEndOf="0"
+                            app:layout_constraintStart_toEndOf="@@0x7f08007b"
+                            app:layout_constraintTop_toBottomOf="@@0x7f08010a"
+                            app:strokeColor="#ffe0e0e0"
+                            app:strokeWidth="1.000000dp">
+                            <ImageView
+                                android:id="@@0x7f0800fd"
+                                android:layout_width="-1"
+                                android:layout_height="-1"
+                                android:scaleType="6" />
+                        </com.google.android.material.card.MaterialCardView>
+                    </androidx.constraintlayout.widget.ConstraintLayout>
+                    <TextView
+                        android:textSize="20.000000sp"
+                        android:textStyle="0x00000001"
+                        android:textColor="@@0x7f050022"
+                        android:id="@@0x7f08022d"
+                        android:layout_width="-2"
+                        android:layout_height="-2"
+                        android:layout_marginBottom="4.000000dp"
+                        android:text="Cassava Mosaic Disease" />
+                    <LinearLayout
+                        android:gravity="0x00000010"
+                        android:orientation="0"
+                        android:layout_width="-1"
+                        android:layout_height="-2"
+                        android:layout_marginBottom="8.000000dp">
+                        <TextView
+                            android:textSize="14.000000sp"
+                            android:textStyle="0x00000001"
+                            android:textColor="@@0x7f050019"
+                            android:id="@@0x7f08022c"
+                            android:layout_width="-2"
+                            android:layout_height="-2"
+                            android:text="96%" />
+                        <ProgressBar
+                            android:id="@@0x7f08019d"
+                            android:layout_width="0.000000dp"
+                            android:layout_height="8.000000dp"
+                            android:progress="96"
+                            android:layout_weight="1"
+                            android:layout_marginStart="12.000000dp"
+                            android:progressTint="@@0x7f050019"
+                            android:progressBackgroundTint="@@0x7f050068"
+                            android:style="??0x01010078" />
+                    </LinearLayout>
+                    <TextView
+                        android:textSize="10.000000sp"
+                        android:textColor="@@0x7f050064"
+                        android:layout_gravity="0x00000001"
+                        android:id="@@0x7f08022f"
+                        android:layout_width="-2"
+                        android:layout_height="-2"
+                        android:text="CBB: 0% | CBSD: 0% | CGM: 0% | CMD: 0% | Healthy: 0%" />
+                    <TextView
+                        android:textSize="12.000000sp"
+                        android:textColor="@@0x7f050064"
+                        android:id="@@0x7f08022e"
+                        android:layout_width="-2"
+                        android:layout_height="-2"
+                        android:layout_marginTop="8.000000dp"
+                        android:text="Inference Time: -- ms | Size: -- KB" />
+                    <View
+                        android:background="#ffeeeeee"
+                        android:layout_width="-1"
+                        android:layout_height="1.000000dp"
+                        android:layout_marginTop="16.000000dp"
+                        android:layout_marginBottom="16.000000dp"
+                        android:layout_marginVertical="16.000000dp" />
+                    <LinearLayout
+                        android:orientation="1"
+                        android:background="#fff9f9f9"
+                        android:padding="16.000000dp"
+                        android:layout_width="-1"
+                        android:layout_height="-2">
+                        <TextView
+                            android:textSize="14.000000sp"
+                            android:textStyle="0x00000001"
+                            android:textColor="@@0x7f050064"
+                            android:layout_width="-2"
+                            android:layout_height="-2"
+                            android:layout_marginBottom="12.000000dp"
+                            android:text="Base Model Output (MobileNetV3)" />
+                        <RelativeLayout
+                            android:layout_width="-1"
+                            android:layout_height="-2"
+                            android:layout_marginBottom="8.000000dp">
+                            <TextView
+                                android:textSize="16.000000sp"
+                                android:textStyle="0x00000001"
+                                android:textColor="@@0x7f050022"
+                                android:id="@@0x7f080221"
+                                android:layout_width="-2"
+                                android:layout_height="-2"
+                                android:text="Waiting..."
+                                android:layout_alignParentStart="true" />
+                            <TextView
+                                android:textSize="16.000000sp"
+                                android:textStyle="0x00000001"
+                                android:textColor="@@0x7f050064"
+                                android:id="@@0x7f080220"
+                                android:layout_width="-2"
+                                android:layout_height="-2"
+                                android:text="0%"
+                                android:layout_alignParentEnd="true" />
+                        </RelativeLayout>
+                        <com.google.android.material.progressindicator.LinearProgressIndicator
+                            android:id="@@0x7f08019a"
+                            android:layout_width="-1"
+                            android:layout_height="-2"
+                            android:layout_marginBottom="4.000000dp"
+                            android:max="100"
+                            android:progress="0"
+                            app:indicatorColor="@@0x7f050064"
+                            app:trackColor="#ffe0e0e0"
+                            app:trackCornerRadius="4.000000dp" />
+                        <TextView
+                            android:textSize="10.000000sp"
+                            android:textColor="@@0x7f050064"
+                            android:layout_gravity="0x00000001"
+                            android:id="@@0x7f080223"
+                            android:layout_width="-2"
+                            android:layout_height="-2"
+                            android:text="CBB: 0% | CBSD: 0% | CGM: 0% | CMD: 0% | Healthy: 0%" />
+                        <TextView
+                            android:textSize="12.000000sp"
+                            android:textColor="@@0x7f050064"
+                            android:id="@@0x7f080222"
+                            android:layout_width="-2"
+                            android:layout_height="-2"
+                            android:layout_marginTop="8.000000dp"
+                            android:text="Inference Time: -- ms | Size: -- KB" />
+                    </LinearLayout>
+                </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+        <LinearLayout
+            android:gravity="0x00000010"
+            android:orientation="0"
+            android:layout_width="-1"
+            android:layout_height="-2"
+            android:layout_marginBottom="12.000000dp">
+            <TextView
+                android:textSize="18.000000sp"
+                android:textStyle="0x00000001"
+                android:textColor="@@0x7f050022"
+                android:layout_width="0.000000dp"
+                android:layout_height="-2"
+                android:text="Scan History"
+                android:layout_weight="1" />
+            <Button
+                android:textColor="@@0x7f050064"
+                android:id="@@0x7f080069"
+                android:layout_width="-2"
+                android:layout_height="-2"
+                android:text="Clear All"
+                android:style="@@0x7f110468" />
+        </LinearLayout>
+        <TextView
+            android:textSize="14.000000sp"
+            android:textColor="@@0x7f050064"
+            android:id="@@0x7f080235"
+            android:visibility="2"
+            android:layout_width="-1"
+            android:layout_height="-2"
+            android:layout_marginTop="24.000000dp"
+            android:layout_marginBottom="24.000000dp"
+            android:text="No past diagnoses found. Scans will be saved here locally."
+            android:textAlignment="4"
+            android:layout_marginVertical="24.000000dp" />
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@@0x7f0801a3"
+            android:visibility="2"
+            android:layout_width="-1"
+            android:layout_height="-2"
+            android:nestedScrollingEnabled="false" />
+    </LinearLayout>
+</androidx.core.widget.NestedScrollView>
