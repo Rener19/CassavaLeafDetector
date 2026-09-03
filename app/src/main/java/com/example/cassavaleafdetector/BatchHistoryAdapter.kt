@@ -7,6 +7,8 @@ import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import java.util.Locale
 
+import android.widget.ImageButton
+
 data class Metrics(
     val accuracy: Double,
     val precision: Double,
@@ -26,23 +28,25 @@ data class BatchHistoryItem(
 )
 
 class BatchHistoryAdapter(
-    private var historyList: List<BatchHistoryItem>
+    private var historyList: List<BatchHistoryItem>,
+    private val onDeleteClick: (BatchHistoryItem) -> Unit = {}
 ) : RecyclerView.Adapter<BatchHistoryAdapter.ViewHolder>() {
 
     class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
-        val txtDate: TextView = view.findViewById(android.R.id.text1)
-        val txtDetails: TextView = view.findViewById(android.R.id.text2)
+        val txtTitle: TextView = view.findViewById(R.id.txt_batch_title)
+        val txtDetails: TextView = view.findViewById(R.id.txt_batch_details)
+        val btnDelete: ImageButton? = view.findViewById(R.id.btn_delete_batch_item)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
         val view = LayoutInflater.from(parent.context)
-            .inflate(android.R.layout.simple_list_item_2, parent, false)
+            .inflate(R.layout.item_batch_history, parent, false)
         return ViewHolder(view)
     }
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
         val item = historyList[position]
-        holder.txtDate.text = "Batch Test: ${item.date} (${item.totalImages} images)"
+        holder.txtTitle.text = "Batch Test: ${item.date} (${item.totalImages} images)"
         
         val details = String.format(
             Locale.US,
@@ -51,6 +55,7 @@ class BatchHistoryAdapter(
             item.enhancedMetrics.accuracy * 100
         )
         holder.txtDetails.text = details
+        holder.btnDelete?.setOnClickListener { onDeleteClick(item) }
     }
 
     override fun getItemCount() = historyList.size

@@ -256,7 +256,12 @@ class MainActivity : AppCompatActivity() {
         recyclerHistory.adapter = historyAdapter
         
         recyclerBatchHistory?.layoutManager = LinearLayoutManager(this)
-        batchHistoryAdapter = BatchHistoryAdapter(batchHistoryList)
+        batchHistoryAdapter = BatchHistoryAdapter(
+            historyList = batchHistoryList,
+            onDeleteClick = { batchItem ->
+                deleteBatchHistoryItem(batchItem)
+            }
+        )
         recyclerBatchHistory?.adapter = batchHistoryAdapter
     }
 
@@ -746,7 +751,11 @@ class MainActivity : AppCompatActivity() {
             enhancedMetrics = enhancedMetrics
         )
         batchHistoryList.add(0, item)
-        
+        saveBatchHistoryToSharedPrefs()
+        updateBatchHistoryUI()
+    }
+
+    private fun saveBatchHistoryToSharedPrefs() {
         val prefs = getSharedPreferences("cassava_batch_history", MODE_PRIVATE)
         val array = JSONArray()
         for (h in batchHistoryList) {
@@ -776,7 +785,16 @@ class MainActivity : AppCompatActivity() {
             array.put(obj)
         }
         prefs.edit().putString("batch_history_json", array.toString()).apply()
-        updateBatchHistoryUI()
+    }
+    
+    private fun deleteBatchHistoryItem(item: BatchHistoryItem) {
+        val index = batchHistoryList.indexOfFirst { it.id == item.id }
+        if (index != -1) {
+            batchHistoryList.removeAt(index)
+            saveBatchHistoryToSharedPrefs()
+            updateBatchHistoryUI()
+            Toast.makeText(this, "Batch test item removed", Toast.LENGTH_SHORT).show()
+        }
     }
     
     private fun loadBatchHistory() {
