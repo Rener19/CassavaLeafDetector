@@ -113,7 +113,8 @@ class CassavaClassifier(private val context: Context) {
         val modelSizeKb: Long = 0,
         val inputShape: String = "",
         val dataType: String = "",
-        val warning: String? = null
+        val warning: String? = null,
+        val probabilities: FloatArray? = null
     )
 
     data class ComparisonResult(
@@ -220,6 +221,26 @@ class CassavaClassifier(private val context: Context) {
                 }
             }
             
+            var rawSum = 0f
+            for (v in outputArray) {
+                rawSum += v
+            }
+            
+            val probs = FloatArray(outputArray.size)
+            if (rawSum > 0.9f && rawSum < 1.1f && maxVal <= 1.0f) {
+                for (i in outputArray.indices) probs[i] = outputArray[i]
+            } else if (maxVal > 1.0f && rawSum > 10f) {
+                for (i in outputArray.indices) probs[i] = outputArray[i] / 255.0f
+            } else {
+                var expSum = 0f
+                for (v in outputArray) {
+                    expSum += Math.exp((v - maxVal).toDouble()).toFloat()
+                }
+                for (i in outputArray.indices) {
+                    probs[i] = (Math.exp((outputArray[i] - maxVal).toDouble()) / expSum).toFloat()
+                }
+            }
+            
             // If the model is a 3-class model (CBB, CBSD, Healthy)
             // We map 0 -> CBB (0), 1 -> CBSD (1), 2 -> Healthy (4)
             val mappedIndex = if (numClasses == 3) {
@@ -241,25 +262,20 @@ class CassavaClassifier(private val context: Context) {
                     else -> 4
                 }
             }
-
-            var rawSum = 0f
-            for (v in outputArray) {
-                rawSum += v
-            }
             
-            val probs = FloatArray(outputArray.size)
-            if (rawSum > 0.9f && rawSum < 1.1f && maxVal <= 1.0f) {
-                for (i in outputArray.indices) probs[i] = outputArray[i]
-            } else if (maxVal > 1.0f && rawSum > 10f) {
-                for (i in outputArray.indices) probs[i] = outputArray[i] / 255.0f
+            val mappedProbs = FloatArray(5)
+            if (numClasses == 3) {
+                mappedProbs[0] = probs[0] // CBB
+                mappedProbs[1] = probs[1] // CBSD
+                mappedProbs[2] = 0f       // CGM
+                mappedProbs[3] = 0f       // CMD
+                mappedProbs[4] = probs[2] // Healthy
             } else {
-                var expSum = 0f
-                for (v in outputArray) {
-                    expSum += Math.exp((v - maxVal).toDouble()).toFloat()
-                }
-                for (i in outputArray.indices) {
-                    probs[i] = (Math.exp((outputArray[i] - maxVal).toDouble()) / expSum).toFloat()
-                }
+                mappedProbs[0] = probs[0] // CBB
+                mappedProbs[1] = probs[1] // CBSD
+                mappedProbs[2] = probs[4] // CGM
+                mappedProbs[3] = probs[3] // CMD
+                mappedProbs[4] = probs[2] // Healthy
             }
             
             val confidence = probs[maxIndex]
@@ -281,7 +297,8 @@ class CassavaClassifier(private val context: Context) {
                 modelSizeKb = modelSizeKb,
                 inputShape = inputShapeStr,
                 dataType = inputDataType,
-                warning = warning
+                warning = warning,
+                probabilities = mappedProbs
             )
         } catch (e: Exception) {
             e.printStackTrace()
@@ -352,6 +369,11 @@ class CassavaClassifier(private val context: Context) {
             confidence *= 0.95f 
         }
 
+        val mappedProbs = FloatArray(5)
+        for (i in 0 until 5) {
+            mappedProbs[i] = if (i == index) confidence else (1f - confidence) / 4f
+        }
+
         return ModelResult(
             label = LABELS[index],
             confidence = confidence.coerceIn(0.5f, 0.99f),
@@ -359,7 +381,8 @@ class CassavaClassifier(private val context: Context) {
             inferenceTimeMs = infTime,
             modelSizeKb = modelSize,
             inputShape = "224x224x3",
-            dataType = "FLOAT32"
+            dataType = "FLOAT32",
+            probabilities = mappedProbs
         )
     }
 }

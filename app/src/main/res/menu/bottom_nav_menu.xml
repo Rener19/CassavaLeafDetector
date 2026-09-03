@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/nav_single_scan"
+        android:icon="@android:drawable/ic_menu_camera"
+        android:title="Single Scan" />
+    <item
+        android:id="@+id/nav_batch_test"
+        android:icon="@android:drawable/ic_menu_manage"
+        android:title="Batch Test" />
+</menu>

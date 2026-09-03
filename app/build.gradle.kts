@@ -26,6 +26,22 @@ android {
             )
         }
     }
+    
+    flavorDimensions += "version"
+    productFlavors {
+        create("user") {
+            dimension = "version"
+            applicationIdSuffix = ".user"
+            versionNameSuffix = "-user"
+            resValue("string", "app_name", "User Cassava Detector")
+        }
+        create("thesis") {
+            dimension = "version"
+            applicationIdSuffix = ".thesis"
+            versionNameSuffix = "-thesis"
+            resValue("string", "app_name", "Cassava Detector")
+        }
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
