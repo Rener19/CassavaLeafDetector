@@ -1,0 +1,435 @@
+﻿================================================================================
+CASSAVA LEAF DETECTOR - COMPREHENSIVE CODEBASE DEFENSE GUIDE & LINE-BY-LINE REVIEW
+================================================================================
+Generated for: Thesis Oral Defense Review
+Target Platform: Android (Kotlin 2.0.21, Target JVM: 11, compileSdk: 36)
+Primary Tech Stack: CameraX, TensorFlow Lite Support, Material Design Components, SharedPreferences JSON
+
+--------------------------------------------------------------------------------
+TABLE OF CONTENTS
+--------------------------------------------------------------------------------
+1. ARCHITECTURE & WORKFLOW OVERVIEW
+2. CassavaClassifier.kt - LINE-BY-LINE DEFENSE ANALYSIS
+3. MainActivity.kt - LINE-BY-LINE DEFENSE ANALYSIS
+4. HistoryAdapter.kt - LINE-BY-LINE DEFENSE ANALYSIS
+5. BatchHistoryAdapter.kt - LINE-BY-LINE DEFENSE ANALYSIS
+6. XML LAYOUTS & USER INTERFACE EXPLANATION
+7. COMPREHENSIVE Q&A CHEATSHEET FOR THE DEFENSE PANEL
+
+
+================================================================================
+1. ARCHITECTURE & WORKFLOW OVERVIEW
+================================================================================
+When the defense panel asks about the architecture:
+The application implements an Android Model-View-Controller (MVC) pattern:
+
+- MODEL LAYER:
+  * CassavaClassifier.kt: Handles model binary memory-mapping, input tensor 
+    preprocessing (Bilinear 224x224 interpolation, Float32 conversion), TFLite 
+    interpreter execution, Softmax probability distribution calculations, 
+    and RGB color-sampled fallback diagnostics.
+
+- CONTROLLER LAYER:
+  * MainActivity.kt: Coordinates the application lifecycle, CameraX hardware 
+    binding, asynchronous photo capture, gallery intent contracts, batch image 
+    evaluation, confusion matrix metric computation, and local JSON persistence 
+    in SharedPreferences.
+
+- VIEW & ADAPTER LAYER:
+  * activity_main.xml: Root navigation frame with CoordinatorLayout and BottomNavigationView.
+  * layout_single_scan.xml: Single-leaf capture, live diagnosis cards, D-CLAHE visualizer view, 
+    and past scan history.
+  * layout_batch_test.xml: Multi-class batch evaluation interface with live image counters 
+    and comparative metric dashboards.
+  * HistoryAdapter.kt & BatchHistoryAdapter.kt: Bind records to RecyclerViews with 
+    thread-isolated downsampling and individual item deletion.
+
+
+================================================================================
+2. CassavaClassifier.kt - LINE-BY-LINE DEFENSE ANALYSIS
+================================================================================
+
+File Path: app/src/main/java/com/example/cassavaleafdetector/CassavaClassifier.kt
+
+[Lines 1-15] Package & Imports
+- Line 1: package com.example.cassavaleafdetector
+- Lines 3-14: Imports Android Bitmap, SystemClock, TensorFlow Lite Interpreter, 
+  and TFLite Support Library components (ImageProcessor, TensorImage, ResizeOp, 
+  TensorBuffer, MappedByteBuffer, FileChannel).
+
+[Lines 16-30] Class Declaration & Member Variables
+- Line 16: class CassavaClassifier(private val context: Context)
+  Accepts Android Context to access asset files stored in app/src/main/assets/.
+- Lines 17-19:
+  * baseInterpreter: TFLite interpreter for the baseline model (model_base.tflite).
+  * enhancedInterpreter: TFLite interpreter for the D-CLAHE enhanced model (model_enhanced.tflite).
+  * visualizerInterpreter: TFLite interpreter generating the enhanced D-CLAHE visualization (model_visualizer.tflite).
+- Lines 21-26: Boolean flags (isBaseModelLoaded, isEnhancedModelLoaded, isVisualizerModelLoaded) 
+  with 'private set' so exterior callers cannot alter model state.
+- Lines 28-29: baseModelSizeKb, enhancedModelSizeKb store the byte-size of the model binaries in KB.
+
+[Lines 31-59] Companion Object (Constants & Domain Knowledge)
+- Lines 32-34: File asset path constants ("model_base.tflite", "model_enhanced.tflite", "model_visualizer.tflite").
+- Lines 36-42: LABELS: Ordered disease class definitions:
+  0: Cassava Bacterial Blight (CBB)
+  1: Cassava Brown Streak Disease (CBSD)
+  2: Cassava Green Mottle (CGM)
+  3: Cassava Mosaic Disease (CMD)
+  4: Healthy
+- Lines 44-50: DESCRIPTIONS: Comprehensive botanical descriptions of leaf symptoms.
+- Lines 52-58: TREATMENTS: Agronomic recommended practices, biological controls, and chemical treatments.
+
+[Lines 61-96] Init Block (Model Loading & Memory Allocation)
+- Lines 63-72: Tries loading BASE_MODEL_PATH. Computes file size in KB, loads mapped buffer via loadModelFile(), 
+  instantiates Interpreter with default options, and sets isBaseModelLoaded = true. 
+  If missing or failing, catches Exception and sets isBaseModelLoaded = false.
+- Lines 74-84: Attempts loading ENHANCED_MODEL_PATH identically.
+- Lines 86-95: Attempts loading VISUALIZER_MODEL_PATH identically.
+
+[Lines 98-106] loadModelFile(path: String): MappedByteBuffer
+- Lines 100-105:
+  Opens asset descriptor via context.assets.openFd(path).
+  Extracts FileInputStream and channel.
+  Maps file into memory using fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength).
+  * Defense note: Memory-mapping avoids loading entire model weights into Java heap, preventing OutOfMemory crashes.
+
+[Lines 108-126] Result Data Classes
+- Lines 108-118: data class ModelResult (label, confidence, index, inferenceTimeMs, modelSizeKb, 
+  inputShape, dataType, warning, probabilities).
+- Lines 120-126: data class ComparisonResult (baseResult, enhancedResult, description, treatment, enhancedBitmap).
+
+[Lines 128-152] classifyImage(bitmap: Bitmap): ComparisonResult
+- Lines 129-131: Fallback check: if models are not loaded, calls simulateComparisonClassification(bitmap).
+- Lines 133-134: Runs runModel() on both baseInterpreter and enhancedInterpreter.
+- Lines 136-138: If visualizer model is present, generates D-CLAHE visual bitmap via runVisualizer().
+- Lines 140-143: Checks if any warning condition exists and prepends it to finalDescription.
+- Lines 145-151: Returns consolidated ComparisonResult containing both model results.
+
+[Lines 154-183] runVisualizer(interpreter: Interpreter, bitmap: Bitmap): Bitmap?
+- Lines 156-158: Creates ImageProcessor with ResizeOp(224, 224, ResizeOp.ResizeMethod.BILINEAR).
+- Lines 160-162: Loads raw bitmap into TensorImage(FLOAT32) and processes it.
+- Lines 164-166: Allocates TensorBuffer [1, 224, 224, 3] and executes interpreter.run().
+- Lines 168-177: Extracts normalized output float array [0..1], multiplies by 255 to recover RGB channels, 
+  packs into an ARGB_8888 Bitmap, and returns it.
+
+[Lines 185-307] runModel(interpreter, bitmap, isLoaded, modelSizeKb): ModelResult?
+- Line 189: Records start timestamp using SystemClock.uptimeMillis().
+- Lines 191-193: Queries input tensor dimensions (e.g. 1x224x224x3) and data type (FLOAT32).
+- Lines 195-201: Preprocesses leaf image: scales bitmap to 224x224 via bilinear interpolation.
+- Lines 203-209: Allocates output TensorBuffer matching model shape [1, N] and executes interpreter.run().
+- Lines 211-212: Calculates inference latency (endTime - startTime).
+- Lines 214-222: ArgMax operation: finds index of maximum probability/logit.
+- Lines 224-242: Softmax Normalization:
+  If output is raw logits, applies numerical stable Softmax: exp(z - maxVal) / sum(exp(z - maxVal)).
+- Lines 244-264: Class Index Remapping:
+  Handles both 3-class models (CBB, CBSD, Healthy) and 5-class models, mapping outputs into standard app class indexes.
+- Lines 266-281: Builds mappedProbs 5-element probability distribution array.
+- Lines 283-290: Contextual warning logic: If leaf is classified Healthy, but CMD or CGM has >35% probability, 
+  attaches an advisory warning.
+- Lines 292-302: Constructs and returns ModelResult with confidence constrained to [0.5, 0.99].
+
+[Lines 309-388] Deterministic RGB Heuristic Fallback
+- Lines 321-344: Samples 1,000 pixels across image to compute average Red, Green, and Blue chromatic intensities.
+- Lines 348-363: Botanical heuristic color mapping:
+  * High Green & low Red -> Healthy (Class 4).
+  * High Red + High Green (Yellow/Mosaic chlorosis) -> CMD (Class 3).
+  * High Red + Low Green (Necrotic brown lesions) -> CBB (Class 0).
+  * Intermediate brown/yellow vein discoloration -> CBSD (Class 1).
+  * Otherwise -> CGM (Class 2).
+- * Defense note: Ensures the application remains fully functional and testable without crashing even without binary weights.
+
+
+================================================================================
+3. MainActivity.kt - LINE-BY-LINE DEFENSE ANALYSIS
+================================================================================
+
+File Path: app/src/main/java/com/example/cassavaleafdetector/MainActivity.kt
+
+[Lines 1-43] Package & Imports
+- Declares namespace and imports Android Lifecycle, CameraX, UI widgets, JSON parsing, 
+  and threading utilities.
+
+[Lines 45-101] State & UI Member Variables
+- Line 45: classifier: CassavaClassifier instance.
+- Line 46: cameraExecutor: SingleThreadExecutor dedicated to CameraX and batch testing.
+- Line 47: imageCapture: CameraX use-case reference.
+- Lines 50-52: layoutSingleScan, layoutBatchTest, bottomNavigation (view containers).
+- Lines 55-84: Pointers to all UI views (camera cards, result cards, image views, progress bars, text labels).
+- Lines 85-86: historyAdapter and historyList for past single-leaf diagnoses.
+- Lines 89-100: batchImages map (stores Uri list per class 0..4) and batchHistoryAdapter.
+
+[Lines 104-110] diseaseDescriptions
+- Map storing disease symptom summaries and control measures displayed on the UI card.
+
+[Lines 112-141] ActivityResult Launchers
+- Lines 112-131: galleryLauncher: Uses GetContent() to select an image from gallery, decodes 
+  InputStream into Bitmap, saves locally in cache, and calls processDiagnosis().
+- Lines 133-141: batchGalleryLauncher: Uses GetMultipleContents() to select multiple leaf images 
+  simultaneously for a specific disease class during batch testing.
+
+[Lines 144-152] requestPermissionLauncher
+- Uses RequestPermission() contract to request android.permission.CAMERA at runtime.
+
+[Lines 154-168] onCreate(savedInstanceState: Bundle?)
+- Enforces Light Mode (MODE_NIGHT_NO) for consistent clinical clarity.
+- Sets layout to activity_main.xml.
+- Initializes classifier and cameraExecutor.
+- Calls setup routines: initViews, setupNavigation, setupRecyclerViews, setupClickListeners, 
+  loadSavedHistory, and loadBatchHistory.
+
+[Lines 170-190] setupNavigation()
+- Attaches onItemSelectedListener to BottomNavigationView.
+- Toggles View.VISIBLE and View.GONE between layoutSingleScan and layoutBatchTest.
+
+[Lines 192-235] initViews()
+- Connects XML element IDs via findViewById for both Single Scan and Batch Test views.
+- Sets txt_model_badge text to "TFLite Models" or "Smart Diagnostics" depending on classifier.isBaseModelLoaded.
+
+[Lines 237-266] setupRecyclerViews()
+- Configures LinearLayoutManager for recyclerHistory.
+- Attaches HistoryAdapter with onItemClick (re-runs diagnosis) and onDeleteClick (calls deleteHistoryItem).
+- Attaches BatchHistoryAdapter with onDeleteClick (calls deleteBatchHistoryItem).
+
+[Lines 268-276] deleteHistoryItem(item: HistoryItem)
+- Locates item in historyList by UUID, removes it, saves updated list to SharedPreferences, 
+  refreshes UI, and displays a confirmation Toast.
+
+[Lines 278-303] setupClickListeners()
+- Binds click listeners for Camera, Gallery, Shutter, Close Camera, Clear All, Metrics Dialog, 
+  and the 5 Batch Upload buttons.
+
+[Lines 305-367] showThesisMetricsDialog()
+- Inflates dialog_thesis_metrics.xml and displays research benchmark comparison:
+  * Training Time, RAM & GPU Memory, Weight Discrepancy (L2 Norm).
+  * Accuracy, Precision, Recall, Macro F1, Specificity (TNR), MCC.
+  * Inference Latency, MAC operations, Model parameter size.
+
+[Lines 369-375] updateBatchCounts()
+- Updates the badge text under each batch category (e.g., "12 images selected").
+
+[Lines 377-403] Camera Permission & Container Controls
+- checkCameraPermissionAndOpen(): Checks CAMERA permission; if granted, opens container; otherwise requests permission.
+- openCameraContainer(): Hides previous results, reveals cameraContainer, calls startCamera().
+- closeCameraContainer(): Hides camera view and unbinds CameraX provider.
+
+[Lines 405-419] startCamera()
+- Obtains ProcessCameraProvider future.
+- Configures Preview use-case bound to preview_view.surfaceProvider.
+- Configures ImageCapture use-case with CAPTURE_MODE_MINIMIZE_LATENCY.
+- Binds both use-cases to DEFAULT_BACK_CAMERA.
+
+[Lines 421-445] takePhoto()
+- Generates timestamped file in cacheDir (e.g. 20260904_102000.jpg).
+- Executes imageCapture.takePicture(). On success, decodes file to Bitmap and calls processDiagnosis().
+
+[Lines 447-523] processDiagnosis(bitmap, imagePath, saveToHistory)
+- Calls classifier.classifyImage(bitmap).
+- Makes cardResult visible.
+- Sets imgScanned (Original) and imgEnhanced (D-CLAHE) bitmaps.
+- Updates diagnosis text, confidence percentages, progress bar colors, and inference metrics.
+- If saveToHistory is true: creates HistoryItem, prepends to historyList (index 0), saves to 
+  SharedPreferences, updates UI, and smooth scrolls to top.
+
+[Lines 525-546] Helpers: getColorForIndex & saveBitmapToCache
+- Maps class index to theme color (Healthy=Green, CBB=Deep Orange, CBSD=Orange, CGM=Yellow, CMD=Magenta).
+- Compresses gallery Bitmaps to JPEG in cacheDir for persistence.
+
+[Lines 548-606] History Persistence (SharedPreferences + JSON)
+- saveHistoryToSharedPrefs(): Serializes historyList into a JSONArray of JSONObjects and saves under "cassava_history".
+- loadSavedHistory(): Reads JSON string, deserializes items into historyList, and updates UI.
+- clearHistory(): Wipes historyList, clears SharedPreferences, and hides clear button.
+
+[Lines 609-657] runBatchTest()
+- Checks if totalImages across all 5 classes > 0.
+- Shows progressBatch and disables test button.
+- On background thread cameraExecutor:
+  * Loops through selected image URIs for each category.
+  * Decodes Bitmaps and runs classifier.classifyImage(bitmap).
+  * Accumulates predictions and ground truth labels.
+  * Calculates statistical metrics via calculateMetrics().
+- On UI thread (runOnUiThread):
+  * Displays metrics dashboard via displayBatchResults().
+  * Persists batch run via saveBatchHistory().
+  * Clears batch selections and resets counters.
+
+[Lines 659-682] displayBatchResults()
+- Formats and displays comparative metrics text block for Base vs. Enhanced models.
+
+[Lines 684-742] calculateMetrics(predictions, groundTruths, numClasses): Metrics
+- Computes Confusion Matrix components:
+  * Accuracy = Correct / Total.
+  * True Positives (TP), False Positives (FP), False Negatives (FN), True Negatives (TN) per class.
+  * Macro Precision = Mean of (TP / (TP + FP)).
+  * Macro Recall = Mean of (TP / (TP + FN)).
+  * Macro F1 Score = 2 * Precision * Recall / (Precision + Recall).
+  * True Negative Rate (Specificity) = Mean of (TN / (TN + FP)).
+  * Matthews Correlation Coefficient (MCC):
+    (TP*TN - FP*FN) / sqrt((TP+FP)*(TP+FN)*(TN+FP)*(TN+FN))
+  * Returns Metrics data class instance.
+
+[Lines 744-854] Batch History Persistence & Individual Deletion
+- saveBatchHistory(): Generates BatchHistoryItem with UUID and prepends to batchHistoryList.
+- saveBatchHistoryToSharedPrefs(): Saves serialized batch test JSON under "cassava_batch_history".
+- deleteBatchHistoryItem(item): Removes specific batch test record by ID and updates storage.
+- loadBatchHistory(): Deserializes past batch test runs on startup.
+- clearBatchHistory(): Clears all batch test runs.
+
+[Lines 856-860] onDestroy()
+- Shuts down cameraExecutor to prevent thread and memory leaks.
+
+
+================================================================================
+4. HistoryAdapter.kt - LINE-BY-LINE DEFENSE ANALYSIS
+================================================================================
+
+File Path: app/src/main/java/com/example/cassavaleafdetector/HistoryAdapter.kt
+
+[Lines 1-21] Header & Constructor
+- Imports Android UI widgets, BitmapFactory, RecyclerView, and concurrency utilities.
+- class HistoryAdapter(items, onItemClick, onDeleteClick):
+  * items: List of HistoryItem models.
+  * onItemClick: Lambda invoked when a card is clicked (re-runs diagnosis).
+  * onDeleteClick: Lambda invoked when the trash icon button is clicked.
+- Lines 23-24: Creates fixed thread pool (4 worker threads) and UI mainHandler for async image decoding.
+
+[Lines 26-32] ViewHolder
+- Caches UI references: imgHistory, txtLabel, txtDate, txtConfidence, and btnDelete.
+
+[Lines 34-38] onCreateViewHolder
+- Inflates item_history.xml layout and wraps in ViewHolder.
+
+[Lines 40-104] onBindViewHolder(holder, position)
+- Line 41: Retrieves HistoryItem for current position.
+- Lines 42-45: Binds disease label, scan date, and formatted confidence (e.g. "94%").
+- Lines 48-56: Sets badge background color matching the disease class index.
+- Lines 58-96: Asynchronous Thumbnail Downsampling:
+  * Assigns imgHistory.tag = imgPath to prevent image mismatch due to view recycling.
+  * In background thread:
+    - Reads dimensions using inJustDecodeBounds = true.
+    - Computes inSampleSize (aiming for ~100x100 thumbnail).
+    - Decodes downsampled Bitmap with inJustDecodeBounds = false.
+    - Posts back to mainHandler: verifies tag matches before setting bitmap.
+- Lines 98-99: Binds click listeners:
+  * holder.itemView triggers onItemClick(item).
+  * holder.btnDelete triggers onDeleteClick(item).
+
+[Lines 106-112] getItemCount & updateData
+- getItemCount(): Returns items.size.
+- updateData(newItems): Updates dataset and calls notifyDataSetChanged().
+
+[Lines 114-121] HistoryItem Data Model
+- id: Unique UUID string.
+- label: Disease name.
+- confidence: Float confidence value (0.0 to 1.0).
+- date: Formatted timestamp string.
+- imagePath: Absolute path to cached JPEG on disk.
+- index: Disease class index (0..4).
+
+
+================================================================================
+5. BatchHistoryAdapter.kt - LINE-BY-LINE DEFENSE ANALYSIS
+================================================================================
+
+File Path: app/src/main/java/com/example/cassavaleafdetector/BatchHistoryAdapter.kt
+
+[Lines 12-27] Data Classes
+- Metrics: Holds accuracy, precision, recall, f1Score, tnr, macroF1, and mcc.
+- BatchHistoryItem: Holds id, date, totalImages, baseMetrics, and enhancedMetrics.
+
+[Lines 30-39] Class Header & ViewHolder
+- class BatchHistoryAdapter(historyList, onDeleteClick):
+  ViewHolder binds txtTitle, txtDetails, and btnDelete.
+
+[Lines 41-45] onCreateViewHolder
+- Inflates item_batch_history.xml.
+
+[Lines 47-59] onBindViewHolder
+- Binds title: "Batch Test: YYYY-MM-DD HH:MM (N images)".
+- Binds details: "Base Acc: XX.X% | Enhanced Acc: YY.Y%".
+- Attaches onDeleteClick listener to btnDelete.
+
+[Lines 61-66] getItemCount & updateData
+- Returns list size and handles dataset refresh.
+
+
+================================================================================
+6. XML LAYOUTS & USER INTERFACE EXPLANATION
+================================================================================
+
+1. activity_main.xml:
+   - Root CoordinatorLayout hosting an AppBarLayout and Toolbar ("Cassava Leaf Health").
+   - FrameLayout containing two interchangeable views via <include>:
+     * layout_single_scan (default visible)
+     * layout_batch_test (default gone)
+   - BottomNavigationView with two tabs: "Single Scan" and "Batch Test".
+
+2. layout_single_scan.xml:
+   - NestedScrollView ensuring smooth scrolling across all device screen heights.
+   - Action Cards: MaterialCardView cards with vector icons for Camera Scan and Gallery Upload.
+   - Camera Container: CameraX PreviewView with circular shutter button (btn_capture).
+   - Result Card (card_result):
+     * Header with model status badge.
+     * HorizontalScrollView holding two 190dp x 190dp MaterialCardViews side-by-side:
+       Original Image (img_scanned) and D-CLAHE View (img_enhanced) using scaleType="fitXY" 
+       so both images fill the cards identically without mismatch or black bars.
+     * Horizontal progress bars and probability distributions for both Base and Enhanced models.
+   - Thesis Evaluation Button (btn_view_thesis_metrics): Launches the thesis metrics modal.
+   - History Section: RecyclerView with Clear All button and individual delete trash icons.
+
+3. layout_batch_test.xml:
+   - 5 Category Cards (CBB, CBSD, CGM, CMD, Healthy) with individual image upload buttons 
+     and real-time selected image counters.
+   - Run Test Button (btn_run_batch_test) and progress bar.
+   - Comparative Metrics Dashboard displaying Base vs. Enhanced evaluation tables.
+   - Batch Test History RecyclerView with per-item deletion.
+
+4. item_history.xml & item_batch_history.xml:
+   - MaterialCardView containers with rounded corners (8dp), subtle stroke elevation, 
+     colored badges, and dedicated trash icon buttons (btn_delete_item / btn_delete_batch_item) 
+     with borderless ripple effects (?attr/selectableItemBackgroundBorderless).
+
+
+================================================================================
+7. COMPREHENSIVE Q&A CHEATSHEET FOR THE DEFENSE PANEL
+================================================================================
+
+Q1: What is the core hypothesis of your thesis?
+A: Our research examines whether applying D-CLAHE (Dual / Directional Contrast Limited 
+   Adaptive Histogram Equalization) preprocessing improves deep learning classification 
+   accuracy and feature saliency on cassava leaf diseases compared to standard unenhanced imagery.
+
+Q2: Why does the mobile app feature both a Base Model and an Enhanced Model?
+A: To provide empirical, live proof of the enhancement effect in real-time. By feeding the 
+   exact same input photo to both models simultaneously, the panel and users can directly 
+   observe the difference in confidence, class probabilities, and diagnostic accuracy.
+
+Q3: What exact preprocessing steps occur before feeding an image to TensorFlow Lite?
+A: 1. Bitmap Decoding: Decodes camera capture or gallery image to an ARGB_8888 Bitmap.
+   2. TensorImage Wrapper: Wraps the bitmap in TensorImage(DataType.FLOAT32).
+   3. Spatial Rescaling: Uses ImageProcessor with ResizeOp(224, 224, BILINEAR) to scale 
+      the image to the expected 224x224 input resolution.
+   4. Tensor Buffer Alignment: Memory-maps the resulting float buffer into shape [1, 224, 224, 3].
+
+Q4: Why did you include Matthews Correlation Coefficient (MCC) in the batch metrics?
+A: Agricultural field datasets are inherently class-imbalanced (e.g., CMD is far more prevalent 
+   than CBB). Standard Accuracy is misleading on imbalanced datasets because a model predicting 
+   only the majority class can still achieve high accuracy. MCC takes into account all four 
+   confusion matrix quadrants (TP, TN, FP, FN) and produces a score between -1 and +1, where a 
+   high score is achieved only if predictions are balanced across all classes.
+
+Q5: How does the application prevent OutOfMemory (OOM) errors and UI stuttering?
+A: 1. Models are loaded via MappedByteBuffer using FileChannel.map(), which maps the model 
+      directly into virtual memory without consuming Java heap space.
+   2. In HistoryAdapter, high-resolution leaf images are decoded on a background thread pool 
+      (Executors.newFixedThreadPool(4)) using BitmapFactory.Options.inSampleSize to downsample 
+      them to ~100x100 thumbnails before allocating memory.
+   3. ImageView tagging (holder.imgHistory.tag = imgPath) prevents incorrect bitmap recycling 
+      during rapid scrolling.
+
+Q6: How does data persistence work?
+A: To maintain lightweight efficiency without the overhead of an SQL/Room database, history 
+   records are serialized into JSON arrays using Android's native org.json package and saved 
+   into private Android SharedPreferences. Captured images are stored in the application's 
+   internal cache directory (cacheDir).
+
+================================================================================

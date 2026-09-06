@@ -13,11 +13,38 @@ import java.io.IOException
 import java.nio.MappedByteBuffer
 import java.nio.channels.FileChannel
 
-class CassavaClassifier(private val context: Context) {
+/**
+ * ============================================================================
+ * CassavaClassifier
+ * ============================================================================
+ * Core Machine Learning inference engine for the Cassava Leaf Detector app.
+ *
+ * Responsibilities:
+ * 1. Memory-mapped Model Loading:
+ *    - Loads lightweight TensorFlow Lite (.tflite) neural network weights directly
+ *      from the Android assets folder into memory without inflating heap memory.
+ * 2. Multi-Model Support:
+ *    - Base Model (MobileNetV3-Small standard baseline).
+ *    - Enhanced Model (MobileNetV3-Small + D-CLAHE + Layerwise Progressive Fine-Tuning).
+ *    - D-CLAHE Visualizer Model (generates a visual contrast-enhanced bitmap preview).
+ * 3. Preprocessing Pipeline:
+ *    - Resizes input camera/gallery bitmaps to 224x224 pixels using bilinear interpolation.
+ *    - Normalizes RGB color channels into 32-bit floating point representations.
+ * 4. Post-processing & Mathematical Mapping:
+ *    - Computes numerically stable Softmax probabilities to prevent float overflow.
+ *    - Remaps raw output logits to the application's standardized disease taxonomy.
+ * 5. Deterministic Fallback:
+ *    - In development or fallback environments where model assets are missing,
+ *      provides an RGB heuristic diagnostic engine to prevent crashes.
+ */
+class CassavaClassifier(private val context: Context) : AutoCloseable {
+
+    // TensorFlow Lite interpreters for executing neural network inference
     private var baseInterpreter: Interpreter? = null
     private var enhancedInterpreter: Interpreter? = null
     private var visualizerInterpreter: Interpreter? = null
 
+    // Flags indicating whether each model was loaded successfully from assets
     var isBaseModelLoaded = false
         private set
     var isEnhancedModelLoaded = false
@@ -25,14 +52,28 @@ class CassavaClassifier(private val context: Context) {
     var isVisualizerModelLoaded = false
         private set
 
+    // File sizes (in KB) tracked for performance and model-complexity reporting
     private var baseModelSizeKb: Long = 0
     private var enhancedModelSizeKb: Long = 0
 
     companion object {
+        // Asset filenames for the compiled TensorFlow Lite models
         const val BASE_MODEL_PATH = "model_base.tflite"
         const val ENHANCED_MODEL_PATH = "model_enhanced.tflite"
         const val VISUALIZER_MODEL_PATH = "model_visualizer.tflite"
-        
+
+        // Input tensor dimensions required by MobileNetV3
+        const val INPUT_IMAGE_WIDTH = 224
+        const val INPUT_IMAGE_HEIGHT = 224
+
+        /**
+         * Standard disease taxonomy index used across the entire application:
+         * Index 0: Cassava Bacterial Blight (CBB)
+         * Index 1: Cassava Brown Streak Disease (CBSD)
+         * Index 2: Cassava Green Mottle (CGM)
+         * Index 3: Cassava Mosaic Disease (CMD)
+         * Index 4: Healthy Leaf
+         */
         val LABELS = listOf(
             "Cassava Bacterial Blight (CBB)",
             "Cassava Brown Streak Disease (CBSD)",
@@ -40,15 +81,21 @@ class CassavaClassifier(private val context: Context) {
             "Cassava Mosaic Disease (CMD)",
             "Healthy"
         )
-        
+
+        /**
+         * Clinical disease descriptions presented to users upon diagnosis.
+         */
         val DESCRIPTIONS = listOf(
-            "CBB is caused by bacteria. It leads to leaf wilting, angular water-soaked spots on leaves, and defoliation. Symptoms also include gum exudation on stems.",
+            "CBB is caused by bacteria (Xanthomonas axonopodis pv. manihotis). It leads to leaf wilting, angular water-soaked spots on leaves, and defoliation. Symptoms also include gum exudation on stems.",
             "CBSD is a viral disease that causes yellow chlorosis along lateral veins of leaves, brown streaks on stems, and dry rot in roots, making them inedible.",
-            "CGM is caused by green spider mites. It results in yellow spots, leaf curling, mottling, and stunted growth of shoots, reducing leaf size.",
-            "CMD is a viral disease transmitted by whiteflies. It causes severe leaf mosaic, curling, distortion, chlorosis, and general stunting of the plant.",
+            "CGM is caused by green spider mites (Mononychellus tanajoa). It results in yellow spots, leaf curling, mottling, and stunted growth of shoots, reducing leaf size.",
+            "CMD is a viral disease transmitted by whiteflies (Bemisia tabaci). It causes severe leaf mosaic, curling, distortion, chlorosis, and general stunting of the plant.",
             "The leaf shows no signs of disease. It has healthy green coloring, standard shape, and no lesions, streaks, or spots."
         )
-        
+
+        /**
+         * Agronomic management and treatment recommendations for diagnosed conditions.
+         */
         val TREATMENTS = listOf(
             "Use disease-free planting materials. Implement crop rotation. Destroy infected crop residues. Plant resistant cassava varieties.",
             "Select resistant cultivars. Control whitefly vectors. Use virus-tested stem cuttings. Remove and burn infected plants early.",
@@ -59,6 +106,7 @@ class CassavaClassifier(private val context: Context) {
     }
 
     init {
+        // Initialize Base Model interpreter
         try {
             val baseFd = context.assets.openFd(BASE_MODEL_PATH)
             baseModelSizeKb = baseFd.length / 1024
@@ -71,6 +119,7 @@ class CassavaClassifier(private val context: Context) {
             isBaseModelLoaded = false
         }
 
+        // Initialize Enhanced Model interpreter
         try {
             val enhancedFd = context.assets.openFd(ENHANCED_MODEL_PATH)
             enhancedModelSizeKb = enhancedFd.length / 1024
@@ -83,8 +132,8 @@ class CassavaClassifier(private val context: Context) {
             isEnhancedModelLoaded = false
         }
 
+        // Initialize D-CLAHE visualizer model interpreter
         try {
-            val visualizerFd = context.assets.openFd(VISUALIZER_MODEL_PATH)
             val visualizerBuffer = loadModelFile(VISUALIZER_MODEL_PATH)
             val options = Interpreter.Options()
             visualizerInterpreter = Interpreter(visualizerBuffer, options)
@@ -95,6 +144,11 @@ class CassavaClassifier(private val context: Context) {
         }
     }
 
+    /**
+     * Memory-maps a TFLite file directly from the app's asset directory into memory.
+     * MappedByteBuffer allows virtual memory page mapping, preventing duplicate in-memory copies
+     * and speeding up model initialization without inflating garbage-collected Android heap space.
+     */
     @Throws(IOException::class)
     private fun loadModelFile(path: String): MappedByteBuffer {
         val fileDescriptor = context.assets.openFd(path)
@@ -105,18 +159,24 @@ class CassavaClassifier(private val context: Context) {
         return fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength)
     }
 
+    /**
+     * Holds individual diagnostic inference output from a single model.
+     */
     data class ModelResult(
-        val label: String,
-        val confidence: Float,
-        val index: Int,
-        val inferenceTimeMs: Long,
-        val modelSizeKb: Long = 0,
-        val inputShape: String = "",
-        val dataType: String = "",
-        val warning: String? = null,
-        val probabilities: FloatArray? = null
+        val label: String,                 // Human-readable disease title
+        val confidence: Float,             // Top-1 Softmax probability [0.0 - 1.0]
+        val index: Int,                    // Standard taxonomy index (0-4)
+        val inferenceTimeMs: Long,         // Latency in milliseconds
+        val modelSizeKb: Long = 0,         // File size on disk in Kilobytes
+        val inputShape: String = "",       // Expected tensor dimensions (e.g. 1x224x224x3)
+        val dataType: String = "",         // Numerical data type (e.g. FLOAT32)
+        val warning: String? = null,       // Ambiguity warning if secondary class probability is elevated
+        val probabilities: FloatArray? = null // Softmax probabilities for all 5 classes
     )
 
+    /**
+     * Holds the combined comparative output of both Base and Enhanced models for thesis evaluation.
+     */
     data class ComparisonResult(
         val baseResult: ModelResult,
         val enhancedResult: ModelResult,
@@ -125,18 +185,33 @@ class CassavaClassifier(private val context: Context) {
         val enhancedBitmap: Bitmap? = null
     )
 
+    /**
+     * Executes classification on the given input leaf [bitmap].
+     * Runs both the Base Model and the Enhanced Model, and optionally runs the
+     * D-CLAHE visualizer model to generate an enhanced contrast preview image.
+     */
     fun classifyImage(bitmap: Bitmap): ComparisonResult {
+        // If neither model is available, fall back to heuristic RGB simulation
         if (!isBaseModelLoaded && !isEnhancedModelLoaded) {
             return simulateComparisonClassification(bitmap)
         }
 
-        val baseResult = runModel(baseInterpreter, bitmap, isBaseModelLoaded, baseModelSizeKb) ?: simulateSingleModel(bitmap, isBase = true)
-        val enhancedResult = runModel(enhancedInterpreter, bitmap, isEnhancedModelLoaded, enhancedModelSizeKb) ?: simulateSingleModel(bitmap, isBase = false)
+        // Run Base Model (or simulate if missing)
+        val baseResult = runModel(baseInterpreter, bitmap, isBaseModelLoaded, baseModelSizeKb)
+            ?: simulateSingleModel(bitmap, isBase = true)
 
+        // Run Enhanced Model (or simulate if missing)
+        val enhancedResult = runModel(enhancedInterpreter, bitmap, isEnhancedModelLoaded, enhancedModelSizeKb)
+            ?: simulateSingleModel(bitmap, isBase = false)
+
+        // Generate D-CLAHE enhanced visualization preview if the visualizer interpreter is loaded
         val enhancedBitmap = if (isVisualizerModelLoaded && visualizerInterpreter != null) {
             runVisualizer(visualizerInterpreter!!, bitmap)
-        } else null
+        } else {
+            null
+        }
 
+        // Prepare disease description and check for borderline class warnings
         var finalDescription = DESCRIPTIONS[enhancedResult.index]
         if (enhancedResult.warning != null) {
             finalDescription = "⚠️ ${enhancedResult.warning}\n\n$finalDescription"
@@ -151,30 +226,41 @@ class CassavaClassifier(private val context: Context) {
         )
     }
 
+    /**
+     * Runs the D-CLAHE visualizer model on the input bitmap.
+     * Produces a 224x224 contrast-enhanced preview bitmap reflecting the D-CLAHE transformation.
+     */
     private fun runVisualizer(interpreter: Interpreter, bitmap: Bitmap): Bitmap? {
         try {
+            // Step 1: Preprocess bitmap into 224x224 FLOAT32 TensorImage
             val imageProcessor = ImageProcessor.Builder()
-                .add(ResizeOp(224, 224, ResizeOp.ResizeMethod.BILINEAR))
+                .add(ResizeOp(INPUT_IMAGE_WIDTH, INPUT_IMAGE_HEIGHT, ResizeOp.ResizeMethod.BILINEAR))
                 .build()
 
             var tensorImage = TensorImage(org.tensorflow.lite.DataType.FLOAT32)
             tensorImage.load(bitmap)
             tensorImage = imageProcessor.process(tensorImage)
 
-            val outputBuffer = TensorBuffer.createFixedSize(intArrayOf(1, 224, 224, 3), org.tensorflow.lite.DataType.FLOAT32)
+            // Step 2: Allocate fixed output buffer for 1x224x224x3 FLOAT32 image
+            val outputBuffer = TensorBuffer.createFixedSize(
+                intArrayOf(1, INPUT_IMAGE_WIDTH, INPUT_IMAGE_HEIGHT, 3),
+                org.tensorflow.lite.DataType.FLOAT32
+            )
 
+            // Step 3: Run inference
             interpreter.run(tensorImage.buffer, outputBuffer.buffer.rewind())
 
+            // Step 4: Convert normalized [0.0, 1.0] RGB float channels back to 32-bit ARGB pixels
             val floatArray = outputBuffer.floatArray
-            val outBitmap = Bitmap.createBitmap(224, 224, Bitmap.Config.ARGB_8888)
-            val pixels = IntArray(224 * 224)
-            for (i in 0 until 224 * 224) {
+            val outBitmap = Bitmap.createBitmap(INPUT_IMAGE_WIDTH, INPUT_IMAGE_HEIGHT, Bitmap.Config.ARGB_8888)
+            val pixels = IntArray(INPUT_IMAGE_WIDTH * INPUT_IMAGE_HEIGHT)
+            for (i in 0 until INPUT_IMAGE_WIDTH * INPUT_IMAGE_HEIGHT) {
                 val r = (floatArray[i * 3] * 255).toInt().coerceIn(0, 255)
                 val g = (floatArray[i * 3 + 1] * 255).toInt().coerceIn(0, 255)
                 val b = (floatArray[i * 3 + 2] * 255).toInt().coerceIn(0, 255)
                 pixels[i] = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
             }
-            outBitmap.setPixels(pixels, 0, 224, 0, 0, 224, 224)
+            outBitmap.setPixels(pixels, 0, INPUT_IMAGE_WIDTH, 0, 0, INPUT_IMAGE_WIDTH, INPUT_IMAGE_HEIGHT)
             return outBitmap
         } catch (e: Exception) {
             e.printStackTrace()
@@ -182,18 +268,37 @@ class CassavaClassifier(private val context: Context) {
         }
     }
 
-    private fun runModel(interpreter: Interpreter?, bitmap: Bitmap, isLoaded: Boolean, modelSizeKb: Long): ModelResult? {
+    /**
+     * Executes inference on an active TFLite interpreter for the given input [bitmap].
+     *
+     * Preprocessing:
+     * - Resizes image to 224x224 using bilinear interpolation.
+     * - Converts pixel colors to 32-bit float values.
+     *
+     * Postprocessing:
+     * - Evaluates model output logits.
+     * - Applies numerically stable Softmax normalization:
+     *     P(i) = exp(z_i - max(z)) / sum(exp(z_j - max(z)))
+     * - Maps class output index to standard taxonomy order.
+     */
+    private fun runModel(
+        interpreter: Interpreter?,
+        bitmap: Bitmap,
+        isLoaded: Boolean,
+        modelSizeKb: Long
+    ): ModelResult? {
         if (!isLoaded || interpreter == null) return null
 
         try {
             val startTime = SystemClock.uptimeMillis()
-            
+
             val inputTensor = interpreter.getInputTensor(0)
             val inputShapeStr = inputTensor.shape().joinToString("x")
             val inputDataType = inputTensor.dataType().name
 
+            // Preprocess: Bilinear resize to 224x224 FLOAT32
             val imageProcessor = ImageProcessor.Builder()
-                .add(ResizeOp(224, 224, ResizeOp.ResizeMethod.BILINEAR))
+                .add(ResizeOp(INPUT_IMAGE_WIDTH, INPUT_IMAGE_HEIGHT, ResizeOp.ResizeMethod.BILINEAR))
                 .build()
 
             var tensorImage = TensorImage(org.tensorflow.lite.DataType.FLOAT32)
@@ -203,15 +308,18 @@ class CassavaClassifier(private val context: Context) {
             val outputTensor = interpreter.getOutputTensor(0)
             val outputShape = outputTensor.shape()
             val numClasses = outputShape[1]
-            
+
             val outputBuffer = TensorBuffer.createFixedSize(outputShape, outputTensor.dataType())
 
+            // Execute TFLite forward pass
             interpreter.run(tensorImage.buffer, outputBuffer.buffer.rewind())
 
             val endTime = SystemClock.uptimeMillis()
             val inferenceTime = endTime - startTime
 
             val outputArray = outputBuffer.floatArray
+
+            // Find maximum logit value and argmax index
             var maxIndex = 0
             var maxVal = outputArray[0]
             for (i in 1 until outputArray.size) {
@@ -220,18 +328,22 @@ class CassavaClassifier(private val context: Context) {
                     maxIndex = i
                 }
             }
-            
+
+            // Calculate raw sum to check if output is already Softmax probabilities or raw logits
             var rawSum = 0f
             for (v in outputArray) {
                 rawSum += v
             }
-            
+
             val probs = FloatArray(outputArray.size)
-            if (rawSum > 0.9f && rawSum < 1.1f && maxVal <= 1.0f) {
+            if (rawSum in 0.9f..1.1f && maxVal <= 1.0f) {
+                // Output is already Softmax probabilities
                 for (i in outputArray.indices) probs[i] = outputArray[i]
             } else if (maxVal > 1.0f && rawSum > 10f) {
+                // Output is 8-bit quantized [0..255]
                 for (i in outputArray.indices) probs[i] = outputArray[i] / 255.0f
             } else {
+                // Raw logits: Apply numerically stable Softmax
                 var expSum = 0f
                 for (v in outputArray) {
                     expSum += Math.exp((v - maxVal).toDouble()).toFloat()
@@ -240,9 +352,35 @@ class CassavaClassifier(private val context: Context) {
                     probs[i] = (Math.exp((outputArray[i] - maxVal).toDouble()) / expSum).toFloat()
                 }
             }
-            
-            // If the model is a 3-class model (CBB, CBSD, Healthy)
-            // We map 0 -> CBB (0), 1 -> CBSD (1), 2 -> Healthy (4)
+
+            /**
+             * Class Taxonomy Remapping Rationale:
+             *
+             * If numClasses == 3:
+             *   Model trained on 3 classes: [0: CBB, 1: CBSD, 2: Healthy]
+             *   App LABELS order:           [0: CBB, 1: CBSD, 2: CGM, 3: CMD, 4: Healthy]
+             *   Mapping: 0 -> 0 (CBB), 1 -> 1 (CBSD), 2 -> 4 (Healthy)
+             *
+             * If numClasses == 5:
+             *   TensorFlow image_dataset_from_directory sorts classes alphabetically by directory name:
+             *     Index 0: "cbb"
+             *     Index 1: "cbsd"
+             *     Index 2: "healthy"
+             *     Index 3: "cmd"
+             *     Index 4: "cgm"
+             *   App LABELS standard order:
+             *     Index 0: CBB
+             *     Index 1: CBSD
+             *     Index 2: CGM
+             *     Index 3: CMD
+             *     Index 4: Healthy
+             *   Mapping:
+             *     Model 0 (cbb)     -> App 0 (CBB)
+             *     Model 1 (cbsd)    -> App 1 (CBSD)
+             *     Model 2 (healthy) -> App 4 (Healthy)
+             *     Model 3 (cmd)     -> App 3 (CMD)
+             *     Model 4 (cgm)     -> App 2 (CGM)
+             */
             val mappedIndex = if (numClasses == 3) {
                 when (maxIndex) {
                     0 -> 0 // CBB
@@ -251,8 +389,6 @@ class CassavaClassifier(private val context: Context) {
                     else -> 4
                 }
             } else {
-                // 5-class model alphabetical order: 0=CBB, 1=CBSD, 2=Healthy, 3=CMD, 4=CGM
-                // App LABELS order: 0=CBB, 1=CBSD, 2=CGM, 3=CMD, 4=Healthy
                 when (maxIndex) {
                     0 -> 0 // CBB
                     1 -> 1 // CBSD
@@ -262,7 +398,8 @@ class CassavaClassifier(private val context: Context) {
                     else -> 4
                 }
             }
-            
+
+            // Remap probabilities to standard 5-class distribution
             val mappedProbs = FloatArray(5)
             if (numClasses == 3) {
                 mappedProbs[0] = probs[0] // CBB
@@ -277,15 +414,17 @@ class CassavaClassifier(private val context: Context) {
                 mappedProbs[3] = probs[3] // CMD
                 mappedProbs[4] = probs[2] // Healthy
             }
-            
+
             val confidence = probs[maxIndex]
-            
+
+            // Borderline condition warning: If predicted Healthy (model index 2),
+            // but CMD or CGM has >35% probability, alert the user of early infection signs.
             var warning: String? = null
             if (numClasses == 5 && maxIndex == 2) {
                 if (probs[3] > 0.35f) {
-                    warning = "Likely Healthy, but watch out for Mosaic Disease (${(probs[3]*100).toInt()}% probability detected)."
+                    warning = "Likely Healthy, but watch out for Mosaic Disease (${(probs[3] * 100).toInt()}% probability detected)."
                 } else if (probs[4] > 0.35f) {
-                    warning = "Likely Healthy, but watch out for Green Mottle (${(probs[4]*100).toInt()}% probability detected)."
+                    warning = "Likely Healthy, but watch out for Green Mottle (${(probs[4] * 100).toInt()}% probability detected)."
                 }
             }
 
@@ -306,9 +445,12 @@ class CassavaClassifier(private val context: Context) {
         }
     }
 
+    /**
+     * Fallback comparative classification when no model files are present.
+     */
     private fun simulateComparisonClassification(bitmap: Bitmap): ComparisonResult {
-        val baseRes = simulateSingleModel(bitmap, true)
-        val enhancedRes = simulateSingleModel(bitmap, false)
+        val baseRes = simulateSingleModel(bitmap, isBase = true)
+        val enhancedRes = simulateSingleModel(bitmap, isBase = false)
 
         return ComparisonResult(
             baseResult = baseRes,
@@ -318,6 +460,16 @@ class CassavaClassifier(private val context: Context) {
         )
     }
 
+    /**
+     * Deterministic RGB color-based heuristic classifier.
+     * Samples 1,000 pixels across the image to calculate mean Red, Green, and Blue intensities.
+     * Uses dominant color signatures to provide realistic diagnostic responses in dev/mock environments:
+     * - High green, low red/blue -> Healthy
+     * - High red and green -> Mosaic / Chlorosis (CMD)
+     * - High red, low green -> Bacterial blight necrotic lesions (CBB)
+     * - Brownish hues -> Brown streak necrotic lesions (CBSD)
+     * - Moderate mottled hues -> Green mottle (CGM)
+     */
     private fun simulateSingleModel(bitmap: Bitmap, isBase: Boolean): ModelResult {
         var redSum = 0L
         var greenSum = 0L
@@ -344,29 +496,29 @@ class CassavaClassifier(private val context: Context) {
 
         val index: Int
         var confidence: Float
-        
+
         if (g > 100 && r < 125 && b < 100) {
-            index = 4
+            index = 4 // Healthy
             confidence = 0.85f + (r % 15) / 100f
         } else if (r > 130 && g > 130 && b < 110) {
-            index = 3
+            index = 3 // CMD
             confidence = 0.80f + (g % 20) / 100f
         } else if (r > 115 && g < 110 && b < 90) {
-            index = 0
+            index = 0 // CBB
             confidence = 0.73f + (r % 25) / 100f
         } else if (r > 120 && g > 105 && b < 85) {
-            index = 1
+            index = 1 // CBSD
             confidence = 0.77f + (b % 20) / 100f
         } else {
-            index = 2
+            index = 2 // CGM
             confidence = 0.71f + (g % 25) / 100f
         }
 
-        // Simulate difference: Enhanced model has slightly higher confidence and faster inference
+        // Simulate difference: Enhanced model exhibits higher confidence and optimized latency
         val infTime = if (isBase) (30L..80L).random() else (15L..45L).random()
         val modelSize = if (isBase) 4500L else 12500L
         if (isBase) {
-            confidence *= 0.95f 
+            confidence *= 0.95f
         }
 
         val mappedProbs = FloatArray(5)
@@ -384,5 +536,21 @@ class CassavaClassifier(private val context: Context) {
             dataType = "FLOAT32",
             probabilities = mappedProbs
         )
+    }
+
+    /**
+     * Releases native TFLite interpreter C++ resources and closes active file handles.
+     */
+    override fun close() {
+        try {
+            baseInterpreter?.close()
+            baseInterpreter = null
+            enhancedInterpreter?.close()
+            enhancedInterpreter = null
+            visualizerInterpreter?.close()
+            visualizerInterpreter = null
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 }
