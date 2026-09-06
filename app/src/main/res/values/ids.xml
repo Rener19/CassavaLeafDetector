@@ -1,0 +1,35 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Thesis specific IDs -->
+    <item name="txt_base_label" type="id" />
+    <item name="txt_base_confidence" type="id" />
+    <item name="progress_base_confidence" type="id" />
+    <item name="txt_base_other_probs" type="id" />
+    <item name="txt_base_metrics" type="id" />
+    <item name="btn_view_thesis_metrics" type="id" />
+    
+    <item name="img_enhanced" type="id" />
+    <item name="txt_enhanced_confidence" type="id" />
+    <item name="progress_enhanced_confidence" type="id" />
+    <item name="txt_enhanced_other_probs" type="id" />
+    <item name="txt_enhanced_metrics" type="id" />
+    
+    <item name="btn_run_batch_test" type="id" />
+    <item name="layout_batch_results" type="id" />
+    <item name="txt_batch_metrics" type="id" />
+    <item name="progress_batch" type="id" />
+    <item name="recycler_batch_history" type="id" />
+    <item name="txt_no_batch_history" type="id" />
+    <item name="btn_clear_batch_history" type="id" />
+    <item name="bottom_navigation" type="id" />
+    <item name="layout_batch_test" type="id" />
+    <item name="txt_model_badge" type="id" />
+    
+    <!-- User specific IDs -->
+    <item name="txt_disease_desc" type="id" />
+    <item name="txt_disease_treatment" type="id" />
+    <item name="lib_cbb" type="id" />
+    <item name="lib_cbsd" type="id" />
+    <item name="lib_cgm" type="id" />
+    <item name="lib_cmd" type="id" />
+</resources>
