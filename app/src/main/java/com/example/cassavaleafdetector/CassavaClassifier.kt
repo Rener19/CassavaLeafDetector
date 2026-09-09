@@ -33,9 +33,8 @@ import java.nio.channels.FileChannel
  * 4. Post-processing & Mathematical Mapping:
  *    - Computes numerically stable Softmax probabilities to prevent float overflow.
  *    - Remaps raw output logits to the application's standardized disease taxonomy.
- * 5. Deterministic Fallback:
- *    - In development or fallback environments where model assets are missing,
- *      provides an RGB heuristic diagnostic engine to prevent crashes.
+ * 5. Strict Model Execution:
+ *    - Pure, uncompromising execution of compiled TensorFlow Lite binary neural network models.
  */
 class CassavaClassifier(private val context: Context) : AutoCloseable {
 
@@ -191,18 +190,20 @@ class CassavaClassifier(private val context: Context) : AutoCloseable {
      * D-CLAHE visualizer model to generate an enhanced contrast preview image.
      */
     fun classifyImage(bitmap: Bitmap): ComparisonResult {
-        // If neither model is available, fall back to heuristic RGB simulation
-        if (!isBaseModelLoaded && !isEnhancedModelLoaded) {
-            return simulateComparisonClassification(bitmap)
+        if (!isBaseModelLoaded || baseInterpreter == null) {
+            throw IllegalStateException("Base model ($BASE_MODEL_PATH) is not loaded or missing from assets.")
+        }
+        if (!isEnhancedModelLoaded || enhancedInterpreter == null) {
+            throw IllegalStateException("Enhanced model ($ENHANCED_MODEL_PATH) is not loaded or missing from assets.")
         }
 
-        // Run Base Model (or simulate if missing)
+        // Run Base Model
         val baseResult = runModel(baseInterpreter, bitmap, isBaseModelLoaded, baseModelSizeKb)
-            ?: simulateSingleModel(bitmap, isBase = true)
+            ?: throw IllegalStateException("Failed to execute inference on Base Model ($BASE_MODEL_PATH).")
 
-        // Run Enhanced Model (or simulate if missing)
+        // Run Enhanced Model
         val enhancedResult = runModel(enhancedInterpreter, bitmap, isEnhancedModelLoaded, enhancedModelSizeKb)
-            ?: simulateSingleModel(bitmap, isBase = false)
+            ?: throw IllegalStateException("Failed to execute inference on Enhanced Model ($ENHANCED_MODEL_PATH).")
 
         // Generate D-CLAHE enhanced visualization preview if the visualizer interpreter is loaded
         val enhancedBitmap = if (isVisualizerModelLoaded && visualizerInterpreter != null) {
@@ -443,99 +444,6 @@ class CassavaClassifier(private val context: Context) : AutoCloseable {
             e.printStackTrace()
             return null
         }
-    }
-
-    /**
-     * Fallback comparative classification when no model files are present.
-     */
-    private fun simulateComparisonClassification(bitmap: Bitmap): ComparisonResult {
-        val baseRes = simulateSingleModel(bitmap, isBase = true)
-        val enhancedRes = simulateSingleModel(bitmap, isBase = false)
-
-        return ComparisonResult(
-            baseResult = baseRes,
-            enhancedResult = enhancedRes,
-            description = DESCRIPTIONS[enhancedRes.index],
-            treatment = TREATMENTS[enhancedRes.index]
-        )
-    }
-
-    /**
-     * Deterministic RGB color-based heuristic classifier.
-     * Samples 1,000 pixels across the image to calculate mean Red, Green, and Blue intensities.
-     * Uses dominant color signatures to provide realistic diagnostic responses in dev/mock environments:
-     * - High green, low red/blue -> Healthy
-     * - High red and green -> Mosaic / Chlorosis (CMD)
-     * - High red, low green -> Bacterial blight necrotic lesions (CBB)
-     * - Brownish hues -> Brown streak necrotic lesions (CBSD)
-     * - Moderate mottled hues -> Green mottle (CGM)
-     */
-    private fun simulateSingleModel(bitmap: Bitmap, isBase: Boolean): ModelResult {
-        var redSum = 0L
-        var greenSum = 0L
-        var blueSum = 0L
-        val width = bitmap.width
-        val height = bitmap.height
-        val step = (width * height / 1000).coerceAtLeast(1)
-
-        var sampleCount = 0
-        for (i in 0 until (width * height) step step) {
-            val x = i % width
-            val y = i / width
-            if (y >= height) break
-            val pixel = bitmap.getPixel(x, y)
-            redSum += (pixel shr 16) and 0xFF
-            greenSum += (pixel shr 8) and 0xFF
-            blueSum += pixel and 0xFF
-            sampleCount++
-        }
-
-        val r = if (sampleCount > 0) redSum / sampleCount else 0L
-        val g = if (sampleCount > 0) greenSum / sampleCount else 0L
-        val b = if (sampleCount > 0) blueSum / sampleCount else 0L
-
-        val index: Int
-        var confidence: Float
-
-        if (g > 100 && r < 125 && b < 100) {
-            index = 4 // Healthy
-            confidence = 0.85f + (r % 15) / 100f
-        } else if (r > 130 && g > 130 && b < 110) {
-            index = 3 // CMD
-            confidence = 0.80f + (g % 20) / 100f
-        } else if (r > 115 && g < 110 && b < 90) {
-            index = 0 // CBB
-            confidence = 0.73f + (r % 25) / 100f
-        } else if (r > 120 && g > 105 && b < 85) {
-            index = 1 // CBSD
-            confidence = 0.77f + (b % 20) / 100f
-        } else {
-            index = 2 // CGM
-            confidence = 0.71f + (g % 25) / 100f
-        }
-
-        // Simulate difference: Enhanced model exhibits higher confidence and optimized latency
-        val infTime = if (isBase) (30L..80L).random() else (15L..45L).random()
-        val modelSize = if (isBase) 4500L else 12500L
-        if (isBase) {
-            confidence *= 0.95f
-        }
-
-        val mappedProbs = FloatArray(5)
-        for (i in 0 until 5) {
-            mappedProbs[i] = if (i == index) confidence else (1f - confidence) / 4f
-        }
-
-        return ModelResult(
-            label = LABELS[index],
-            confidence = confidence.coerceIn(0.5f, 0.99f),
-            index = index,
-            inferenceTimeMs = infTime,
-            modelSizeKb = modelSize,
-            inputShape = "224x224x3",
-            dataType = "FLOAT32",
-            probabilities = mappedProbs
-        )
     }
 
     /**

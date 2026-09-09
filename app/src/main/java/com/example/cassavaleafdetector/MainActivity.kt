@@ -279,7 +279,7 @@ class MainActivity : AppCompatActivity() {
 
         // Model status badge
         findViewById<TextView>(R.id.txt_model_badge)?.text =
-            if (classifier.isBaseModelLoaded && classifier.isEnhancedModelLoaded) "TFLite Models" else "Smart Diagnostics"
+            if (classifier.isBaseModelLoaded && classifier.isEnhancedModelLoaded) "TFLite Models" else "Model Error"
     }
 
     /**
@@ -462,7 +462,13 @@ class MainActivity : AppCompatActivity() {
      * updates confidence bars, and records the event into local history.
      */
     private fun processDiagnosis(bitmap: Bitmap, imagePath: String, saveToHistory: Boolean = true) {
-        val result = classifier.classifyImage(bitmap)
+        val result = try {
+            classifier.classifyImage(bitmap)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Toast.makeText(this, "Model Execution Error: ${e.message}", Toast.LENGTH_LONG).show()
+            return
+        }
 
         // Make result container visible
         cardResult.visibility = View.VISIBLE
