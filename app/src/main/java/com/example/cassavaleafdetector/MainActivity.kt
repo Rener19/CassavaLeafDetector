@@ -470,6 +470,39 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        // Selective Classification: Rejection threshold check (60%)
+        if (result.enhancedResult.confidence < CassavaClassifier.CONFIDENCE_THRESHOLD) {
+            val confPercent = (result.enhancedResult.confidence * 100).toInt()
+            AlertDialog.Builder(this)
+                .setTitle("⚠️ Low Confidence Prediction ($confPercent%)")
+                .setMessage(
+                    "The model is uncertain about this leaf image (Confidence is below the 60% diagnostic threshold).\n\n" +
+                    "This usually occurs when the photo is blurry, poorly lit, or contains background clutter.\n\n" +
+                    "Would you like to take another photo or proceed anyway?"
+                )
+                .setPositiveButton("Retake Photo") { _, _ ->
+                    openCameraContainer()
+                }
+                .setNeutralButton("Upload Another") { _, _ ->
+                    closeCameraContainer()
+                    galleryLauncher.launch("image/*")
+                }
+                .setNegativeButton("View Anyway") { _, _ ->
+                    displayDiagnosisResult(result, bitmap, imagePath, saveToHistory)
+                }
+                .show()
+            return
+        }
+
+        displayDiagnosisResult(result, bitmap, imagePath, saveToHistory)
+    }
+
+    private fun displayDiagnosisResult(
+        result: CassavaClassifier.ComparisonResult,
+        bitmap: Bitmap,
+        imagePath: String,
+        saveToHistory: Boolean
+    ) {
         // Make result container visible
         cardResult.visibility = View.VISIBLE
 
@@ -699,6 +732,8 @@ class MainActivity : AppCompatActivity() {
             val basePredictions = mutableListOf<Int>()
             val enhancedPredictions = mutableListOf<Int>()
             val groundTruths = mutableListOf<Int>()
+            var processedCount = 0
+            var skippedLowConfidence = 0
 
             for ((classIndex, uris) in batchImages) {
                 for (uri in uris) {
@@ -707,7 +742,13 @@ class MainActivity : AppCompatActivity() {
                         val bitmap = BitmapFactory.decodeStream(inputStream)
                         inputStream?.close()
                         if (bitmap != null) {
+                            processedCount++
                             val result = classifier.classifyImage(bitmap)
+                            // Selective Classification: Exclude predictions falling below 60% confidence threshold
+                            if (result.enhancedResult.confidence < CassavaClassifier.CONFIDENCE_THRESHOLD) {
+                                skippedLowConfidence++
+                                continue
+                            }
                             basePredictions.add(result.baseResult.index)
                             enhancedPredictions.add(result.enhancedResult.index)
                             groundTruths.add(classIndex)
@@ -718,13 +759,29 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
+            if (enhancedPredictions.isEmpty()) {
+                runOnUiThread {
+                    Toast.makeText(
+                        this,
+                        "All $processedCount image(s) fell below the 60% confidence threshold and were excluded from evaluation.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    btnRunBatchTest?.isEnabled = true
+                    progressBatch?.visibility = View.GONE
+                    batchImages.clear()
+                    updateBatchCounts()
+                }
+                return@execute
+            }
+
             // Compute rigorous academic metrics across the 5 disease classes
+            val evaluatedCount = enhancedPredictions.size
             val baseMetrics = calculateMetrics(basePredictions, groundTruths, 5)
             val enhancedMetrics = calculateMetrics(enhancedPredictions, groundTruths, 5)
 
             runOnUiThread {
-                displayBatchResults(baseMetrics, enhancedMetrics, totalImages)
-                saveBatchHistory(totalImages, baseMetrics, enhancedMetrics)
+                displayBatchResults(baseMetrics, enhancedMetrics, processedCount, evaluatedCount, skippedLowConfidence)
+                saveBatchHistory(evaluatedCount, baseMetrics, enhancedMetrics)
                 btnRunBatchTest?.isEnabled = true
                 progressBatch?.visibility = View.GONE
 
@@ -816,10 +873,19 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
-    private fun displayBatchResults(base: Metrics, enhanced: Metrics, total: Int) {
+    private fun displayBatchResults(
+        base: Metrics,
+        enhanced: Metrics,
+        total: Int,
+        evaluated: Int,
+        skipped: Int
+    ) {
         layoutBatchResults?.visibility = View.VISIBLE
         val resultText = """
-            Total Images Tested: $total
+            BATCH SUMMARY:
+            • Total Images Uploaded: $total
+            • Evaluated (≥ 60% Conf.): $evaluated
+            • Excluded (< 60% Conf.): $skipped
             
             BASE MODEL METRICS:
             Accuracy: ${formatPercent(base.accuracy)}

@@ -108,4 +108,37 @@ class ExampleUnitTest {
         assertEquals(0.85, metrics.macroF1, 0.0001)
         assertEquals(0.81, metrics.mcc, 0.0001)
     }
+
+    @Test
+    fun testConfidenceThresholdConstant() {
+        // Assert that the selective classification confidence threshold is 60% (0.60f)
+        assertEquals(0.60f, CassavaClassifier.CONFIDENCE_THRESHOLD, 0.0001f)
+    }
+
+    @Test
+    fun testSelectiveClassificationFilter() {
+        // Mock confidence values for 5 candidate predictions
+        val confidences = listOf(0.85f, 0.52f, 0.74f, 0.59f, 0.91f)
+        val groundTruths = listOf(0, 1, 2, 3, 4)
+        val predictedIndices = listOf(0, 2, 2, 3, 4)
+
+        val filteredPredictions = mutableListOf<Int>()
+        val filteredTruths = mutableListOf<Int>()
+        var excludedCount = 0
+
+        for (i in confidences.indices) {
+            if (confidences[i] >= CassavaClassifier.CONFIDENCE_THRESHOLD) {
+                filteredPredictions.add(predictedIndices[i])
+                filteredTruths.add(groundTruths[i])
+            } else {
+                excludedCount++
+            }
+        }
+
+        // Two items (0.52 and 0.59) are below 0.60 threshold and must be excluded
+        assertEquals(2, excludedCount)
+        assertEquals(3, filteredPredictions.size)
+        assertEquals(listOf(0, 2, 4), filteredPredictions)
+        assertEquals(listOf(0, 2, 4), filteredTruths)
+    }
 }

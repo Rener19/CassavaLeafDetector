@@ -65,6 +65,9 @@ class CassavaClassifier(private val context: Context) : AutoCloseable {
         const val INPUT_IMAGE_WIDTH = 224
         const val INPUT_IMAGE_HEIGHT = 224
 
+        // Selective Classification rejection threshold (Geifman & El-Yaniv, 2017; Ramcharan et al., 2019)
+        const val CONFIDENCE_THRESHOLD = 0.60f
+
         /**
          * Standard disease taxonomy index used across the entire application:
          * Index 0: Cassava Bacterial Blight (CBB)
@@ -431,7 +434,7 @@ class CassavaClassifier(private val context: Context) : AutoCloseable {
 
             return ModelResult(
                 label = LABELS[mappedIndex],
-                confidence = confidence.coerceIn(0.5f, 0.99f),
+                confidence = confidence.coerceIn(0.01f, 0.99f),
                 index = mappedIndex,
                 inferenceTimeMs = inferenceTime,
                 modelSizeKb = modelSizeKb,
