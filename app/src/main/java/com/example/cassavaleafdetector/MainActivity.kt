@@ -471,7 +471,9 @@ class MainActivity : AppCompatActivity() {
         }
 
         // Selective Classification: Rejection threshold check (60%)
-        if (result.enhancedResult.confidence < CassavaClassifier.CONFIDENCE_THRESHOLD) {
+        // Only prompt for fresh scans (saveToHistory == true); browsing historical records opens directly.
+        if (saveToHistory && result.enhancedResult.confidence < CassavaClassifier.CONFIDENCE_THRESHOLD) {
+            cardResult.visibility = View.GONE
             val confPercent = (result.enhancedResult.confidence * 100).toInt()
             AlertDialog.Builder(this)
                 .setTitle("⚠️ Low Confidence Prediction ($confPercent%)")
@@ -763,7 +765,7 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread {
                     Toast.makeText(
                         this,
-                        "All $processedCount image(s) fell below the 60% confidence threshold and were excluded from evaluation.",
+                        "All $totalImages image(s) fell below the 60% confidence threshold and were excluded from evaluation.",
                         Toast.LENGTH_LONG
                     ).show()
                     btnRunBatchTest?.isEnabled = true
@@ -780,7 +782,7 @@ class MainActivity : AppCompatActivity() {
             val enhancedMetrics = calculateMetrics(enhancedPredictions, groundTruths, 5)
 
             runOnUiThread {
-                displayBatchResults(baseMetrics, enhancedMetrics, processedCount, evaluatedCount, skippedLowConfidence)
+                displayBatchResults(baseMetrics, enhancedMetrics, totalImages, evaluatedCount, skippedLowConfidence)
                 saveBatchHistory(evaluatedCount, baseMetrics, enhancedMetrics)
                 btnRunBatchTest?.isEnabled = true
                 progressBatch?.visibility = View.GONE
