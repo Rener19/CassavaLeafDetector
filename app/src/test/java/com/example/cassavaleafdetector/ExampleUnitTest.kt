@@ -200,4 +200,25 @@ class ExampleUnitTest {
         assertEquals(1, excludedLowConf)
         assertEquals(2, fullyEvaluated)
     }
+
+    @Test
+    fun testAdjustableBatchConfidenceThreshold() {
+        val confidences = listOf(0.10f, 0.45f, 0.60f, 0.75f, 0.95f)
+
+        // Threshold = 0.00 (All images pass)
+        val passedAtZero = confidences.count { it >= 0.00f }
+        assertEquals(5, passedAtZero)
+
+        // Threshold = 0.60 (Default: 0.60, 0.75, 0.95 pass)
+        val passedAtDefault = confidences.count { it >= 0.60f }
+        assertEquals(3, passedAtDefault)
+
+        // Threshold = 0.80 (Only 0.95 passes)
+        val passedAtEighty = confidences.count { it >= 0.80f }
+        assertEquals(1, passedAtEighty)
+
+        // Threshold = 1.00 (Strict: none pass)
+        val passedAtHundred = confidences.count { it >= 1.00f }
+        assertEquals(0, passedAtHundred)
+    }
 }

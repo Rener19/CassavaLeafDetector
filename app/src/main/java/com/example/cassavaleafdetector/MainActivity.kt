@@ -12,6 +12,7 @@ import android.widget.Button
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.ProgressBar
+import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -144,6 +145,9 @@ class MainActivity : AppCompatActivity() {
     private var btnClearBatchHistory: Button? = null
     private var batchHistoryAdapter: BatchHistoryAdapter? = null
     private val batchHistoryList = mutableListOf<BatchHistoryItem>()
+    private var seekBatchThreshold: SeekBar? = null
+    private var txtBatchThresholdValue: TextView? = null
+    private var batchConfidenceThreshold: Float = 0.60f
 
     // =========================================================================
     // Activity Result Launchers
@@ -287,6 +291,8 @@ class MainActivity : AppCompatActivity() {
         recyclerBatchHistory = findViewById(R.id.recycler_batch_history)
         txtNoBatchHistory = findViewById(R.id.txt_no_batch_history)
         btnClearBatchHistory = findViewById(R.id.btn_clear_batch_history)
+        seekBatchThreshold = findViewById(R.id.seek_batch_threshold)
+        txtBatchThresholdValue = findViewById(R.id.txt_batch_threshold_value)
 
         // Model status badge
         findViewById<TextView>(R.id.txt_model_badge)?.text =
@@ -376,6 +382,16 @@ class MainActivity : AppCompatActivity() {
 
         btnRunBatchTest?.setOnClickListener { runBatchTest() }
         btnClearBatchHistory?.setOnClickListener { clearBatchHistory() }
+
+        seekBatchThreshold?.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                batchConfidenceThreshold = progress / 100.0f
+                txtBatchThresholdValue?.text = "$progress%"
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        })
     }
 
     // =========================================================================
@@ -903,8 +919,8 @@ class MainActivity : AppCompatActivity() {
 
                             // Stage 2: Disease classification
                             val result = classifier.classifyImage(bitmap, gatekeeperResult)
-                            // Selective Classification: Exclude predictions falling below 60% confidence threshold
-                            if (result.enhancedResult.confidence < CassavaClassifier.CONFIDENCE_THRESHOLD) {
+                            // Selective Classification: Exclude predictions falling below user-configured confidence threshold
+                            if (result.enhancedResult.confidence < batchConfidenceThreshold) {
                                 skippedLowConfidence++
                                 continue
                             }
@@ -918,11 +934,12 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
+            val thresholdPercent = (batchConfidenceThreshold * 100).toInt()
             if (enhancedPredictions.isEmpty()) {
                 runOnUiThread {
                     Toast.makeText(
                         this,
-                        "All $totalImages image(s) were excluded from evaluation (Non-cassava: $skippedNonCassava, Low-confidence < 60%: $skippedLowConfidence).",
+                        "All $totalImages image(s) were excluded from evaluation (Non-cassava: $skippedNonCassava, Low-confidence < $thresholdPercent%: $skippedLowConfidence).",
                         Toast.LENGTH_LONG
                     ).show()
                     btnRunBatchTest?.isEnabled = true
@@ -937,6 +954,7 @@ class MainActivity : AppCompatActivity() {
             val evaluatedCount = enhancedPredictions.size
             val baseMetrics = calculateMetrics(basePredictions, groundTruths, 5)
             val enhancedMetrics = calculateMetrics(enhancedPredictions, groundTruths, 5)
+            val currentThreshold = batchConfidenceThreshold
 
             runOnUiThread {
                 displayBatchResults(
@@ -945,7 +963,8 @@ class MainActivity : AppCompatActivity() {
                     totalImages,
                     evaluatedCount,
                     skippedNonCassava,
-                    skippedLowConfidence
+                    skippedLowConfidence,
+                    currentThreshold
                 )
                 saveBatchHistory(evaluatedCount, baseMetrics, enhancedMetrics)
                 btnRunBatchTest?.isEnabled = true
@@ -1045,15 +1064,17 @@ class MainActivity : AppCompatActivity() {
         total: Int,
         evaluated: Int,
         skippedNonCassava: Int,
-        skippedLowConfidence: Int
+        skippedLowConfidence: Int,
+        confidenceThreshold: Float
     ) {
         layoutBatchResults?.visibility = View.VISIBLE
+        val thresholdPercent = (confidenceThreshold * 100).toInt()
         val resultText = """
             BATCH SUMMARY:
             • Total Images Uploaded: $total
-            • Evaluated (Pass Gatekeeper & ≥ 60% Conf.): $evaluated
+            • Evaluated (Pass Gatekeeper & ≥ $thresholdPercent% Conf.): $evaluated
             • Excluded (Not Cassava Leaf < 70%): $skippedNonCassava
-            • Excluded (Low Confidence < 60%): $skippedLowConfidence
+            • Excluded (Low Confidence < $thresholdPercent%): $skippedLowConfidence
             
             BASE MODEL METRICS:
             Accuracy: ${formatPercent(base.accuracy)}
