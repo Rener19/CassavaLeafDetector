@@ -411,27 +411,73 @@
                 </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <TextView
+                android:layout_width="20dp"
+                android:width="20dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="0.2"
+                android:text="Scan History"
+                android:textColor="@color/black"
+                android:textSize="18.000000sp"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/btn_clear_history"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="40dp"
+                android:layout_weight="0.05"
+                android:width="70dp"
+                android:text="Clear All"
+                android:textColor="@color/gray_text" />
+
+
+
+        </LinearLayout>
+
         <LinearLayout
             android:gravity="center_vertical"
             android:orientation="horizontal"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="12.000000dp">
-            <TextView
-                android:textSize="18.000000sp"
-                android:textStyle="bold"
-                android:textColor="@color/black"
-                android:layout_width="0.000000dp"
-                android:layout_height="wrap_content"
-                android:text="Scan History"
-                android:layout_weight="1" />
+
+
             <Button
-                android:textColor="@color/gray_text"
-                android:id="@+id/btn_clear_history"
-                android:layout_width="wrap_content"
+                android:id="@+id/allToggle"
+                android:layout_width="60dp"
                 android:layout_height="wrap_content"
-                android:text="Clear All"
-                style="@style/Widget.MaterialComponents.Button.TextButton" />
+                android:layout_weight=".01"
+                android:text="All"
+                android:textAlignment="center"
+                android:layout_marginRight="10dp"
+                android:textStyle="bold"/>
+
+            <Button
+                android:id="@+id/healthyToggle"
+                android:layout_width="60dp"
+                android:layout_height="wrap_content"
+                android:layout_weight=".17"
+                android:text="Healthy"
+                android:textAlignment="center"
+                android:layout_marginRight="10dp"
+                android:textStyle="bold"/>
+
+            <Button
+                android:id="@+id/unhealthyToggle"
+                android:layout_width="60dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="0.2"
+                android:text="Unhealthy"
+                android:textAlignment="center"
+                android:textStyle="bold" />
+
+
         </LinearLayout>
         <TextView
             android:textSize="14.000000sp"

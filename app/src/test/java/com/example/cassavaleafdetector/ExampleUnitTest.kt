@@ -141,4 +141,63 @@ class ExampleUnitTest {
         assertEquals(listOf(0, 2, 4), filteredPredictions)
         assertEquals(listOf(0, 2, 4), filteredTruths)
     }
+
+    @Test
+    fun testGatekeeperThresholdConstant() {
+        // Assert that the Stage 1 Gatekeeper decision threshold is 70% (0.70f)
+        assertEquals(0.70f, CassavaClassifier.GATEKEEPER_THRESHOLD, 0.0001f)
+    }
+
+    @Test
+    fun testGatekeeperBinaryClassification() {
+        // Test values around the 0.70 threshold
+        val testProbabilities = listOf(0.05f, 0.699f, 0.70f, 0.701f, 0.99f)
+        val expectedIsCassava = listOf(false, false, true, true, true)
+
+        for (i in testProbabilities.indices) {
+            val prob = testProbabilities[i]
+            val isCassava = prob >= CassavaClassifier.GATEKEEPER_THRESHOLD
+            assertEquals("Mismatch for probability $prob", expectedIsCassava[i], isCassava)
+        }
+    }
+
+    @Test
+    fun testTwoStageCascadePipeline() {
+        // Mock a batch of 5 input images: (gatekeeper_prob, disease_confidence)
+        // Image 0: Non-cassava (0.15) -> excluded at Stage 1
+        // Image 1: Cassava (0.92), low disease conf (0.45) -> excluded at Stage 2
+        // Image 2: Cassava (0.85), high disease conf (0.88) -> evaluated
+        // Image 3: Non-cassava (0.65) -> excluded at Stage 1
+        // Image 4: Cassava (0.75), high disease conf (0.62) -> evaluated
+        val samples = listOf(
+            Pair(0.15f, 0.90f),
+            Pair(0.92f, 0.45f),
+            Pair(0.85f, 0.88f),
+            Pair(0.65f, 0.95f),
+            Pair(0.75f, 0.62f)
+        )
+
+        var passedGatekeeper = 0
+        var excludedNonCassava = 0
+        var excludedLowConf = 0
+        var fullyEvaluated = 0
+
+        for ((gkProb, diseaseConf) in samples) {
+            if (gkProb < CassavaClassifier.GATEKEEPER_THRESHOLD) {
+                excludedNonCassava++
+                continue
+            }
+            passedGatekeeper++
+            if (diseaseConf < CassavaClassifier.CONFIDENCE_THRESHOLD) {
+                excludedLowConf++
+                continue
+            }
+            fullyEvaluated++
+        }
+
+        assertEquals(2, excludedNonCassava)
+        assertEquals(3, passedGatekeeper)
+        assertEquals(1, excludedLowConf)
+        assertEquals(2, fullyEvaluated)
+    }
 }

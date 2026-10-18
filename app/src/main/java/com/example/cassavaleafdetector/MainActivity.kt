@@ -1,6 +1,7 @@
 package com.example.cassavaleafdetector
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -119,9 +120,13 @@ class MainActivity : AppCompatActivity() {
     // Single-scan history list elements
     private lateinit var recyclerHistory: RecyclerView
     private lateinit var txtNoHistory: TextView
+    private var btnHealthyToggle: Button? = null
+    private var btnUnhealthyToggle: Button? = null
+    private var btnAllToggle: Button? = null
     private lateinit var btnClearHistory: Button
     private lateinit var historyAdapter: HistoryAdapter
     private val historyList = mutableListOf<HistoryItem>()
+    private var historyListDisplay = mutableListOf<HistoryItem>()
 
     // =========================================================================
     // Batch-Test UI Elements (Thesis flavor)
@@ -215,6 +220,9 @@ class MainActivity : AppCompatActivity() {
         setupClickListeners()
         loadSavedHistory()
         loadBatchHistory()
+        btnAllToggle?.setOnClickListener { loadSavedHistory() }
+        btnHealthyToggle?.setOnClickListener { toggleHealthy() }
+        btnUnhealthyToggle?.setOnClickListener { toggleUnhealthy() }
     }
 
     override fun onDestroy() {
@@ -267,6 +275,9 @@ class MainActivity : AppCompatActivity() {
         recyclerHistory = findViewById(R.id.recycler_history)
         txtNoHistory = findViewById(R.id.txt_no_history)
         btnClearHistory = findViewById(R.id.btn_clear_history)
+        btnHealthyToggle = findViewById(R.id.healthyToggle)
+        btnUnhealthyToggle = findViewById(R.id.unhealthyToggle)
+        btnAllToggle = findViewById(R.id.allToggle)
 
         // Batch testing views (Thesis flavor only)
         btnRunBatchTest = findViewById(R.id.btn_run_batch_test)
@@ -458,12 +469,56 @@ class MainActivity : AppCompatActivity() {
     // =========================================================================
 
     /**
-     * Dispatches inference through [CassavaClassifier], populates results into views,
-     * updates confidence bars, and records the event into local history.
+     * Entry point for single-scan image diagnosis.
+     * Stage 1: Executes Gatekeeper binary model to determine whether the image is a cassava leaf.
+     * If rejected (< 70% confidence), prompts the user with options to retake or continue anyway.
+     * If accepted (>= 70% confidence) or if user chooses "Continue", proceeds to Stage 2 classification.
      */
     private fun processDiagnosis(bitmap: Bitmap, imagePath: String, saveToHistory: Boolean = true) {
+        if (saveToHistory) {
+            val gatekeeperResult = classifier.checkGatekeeper(bitmap)
+            if (!gatekeeperResult.isCassava) {
+                cardResult.visibility = View.GONE
+                val confPercent = (gatekeeperResult.probability * 100).toInt()
+                AlertDialog.Builder(this)
+                    .setTitle("⚠️ Not a Cassava Leaf")
+                    .setMessage(
+                        "It seems like this image is not a cassava leaf ($confPercent% Cassava confidence).\n\n" +
+                        "Would you like to retake the photo or continue anyway?"
+                    )
+                    .setPositiveButton("Retake Photo") { _, _ ->
+                        openCameraContainer()
+                    }
+                    .setNeutralButton("Upload Another") { _, _ ->
+                        closeCameraContainer()
+                        galleryLauncher.launch("image/*")
+                    }
+                    .setNegativeButton("Continue") { _, _ ->
+                        runClassificationPipeline(bitmap, imagePath, saveToHistory, gatekeeperResult)
+                    }
+                    .show()
+                return
+            }
+            runClassificationPipeline(bitmap, imagePath, saveToHistory, gatekeeperResult)
+        } else {
+            // Browsing historical records directly
+            runClassificationPipeline(bitmap, imagePath, saveToHistory = false, gatekeeperResult = null)
+        }
+    }
+
+    /**
+     * Stage 2: Dispatches multi-model disease inference through [CassavaClassifier],
+     * enforces the 60% confidence threshold rejection filter, populates results into views,
+     * updates confidence bars, and records the event into local history.
+     */
+    private fun runClassificationPipeline(
+        bitmap: Bitmap,
+        imagePath: String,
+        saveToHistory: Boolean,
+        gatekeeperResult: CassavaClassifier.GatekeeperResult? = null
+    ) {
         val result = try {
-            classifier.classifyImage(bitmap)
+            classifier.classifyImage(bitmap, gatekeeperResult)
         } catch (e: Exception) {
             e.printStackTrace()
             Toast.makeText(this, "Model Execution Error: ${e.message}", Toast.LENGTH_LONG).show()
@@ -536,12 +591,24 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        txtEnhancedMetrics?.text = String.format(
-            Locale.getDefault(),
-            "Inference Time: %d ms | Size: %d KB",
-            result.enhancedResult.inferenceTimeMs,
-            result.enhancedResult.modelSizeKb
-        )
+        result.gatekeeperResult?.let { gk ->
+            txtEnhancedMetrics?.text = String.format(
+                Locale.getDefault(),
+                "Gatekeeper: %s (%.0f%%) [%d ms] | Inference: %d ms | Size: %d KB",
+                if (gk.isCassava) "Cassava Leaf" else "Non-Cassava Leaf",
+                gk.probability * 100,
+                gk.inferenceTimeMs,
+                result.enhancedResult.inferenceTimeMs,
+                result.enhancedResult.modelSizeKb
+            )
+        } ?: run {
+            txtEnhancedMetrics?.text = String.format(
+                Locale.getDefault(),
+                "Inference Time: %d ms | Size: %d KB",
+                result.enhancedResult.inferenceTimeMs,
+                result.enhancedResult.modelSizeKb
+            )
+        }
 
         // 3. Populate User Flavor agronomic disease description and management
         txtDiseaseDesc?.text = result.description
@@ -587,7 +654,7 @@ class MainActivity : AppCompatActivity() {
             )
             historyList.add(0, historyItem)
             saveHistoryToSharedPrefs()
-            updateHistoryUI()
+            updateHistoryUI("all")
         }
 
         // Smooth scroll to top of scrollview so user sees analysis result immediately
@@ -667,36 +734,117 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        updateHistoryUI()
+        updateHistoryUI("all")
     }
 
-    private fun updateHistoryUI() {
-        if (historyList.isEmpty()) {
-            txtNoHistory.visibility = View.VISIBLE
-            recyclerHistory.visibility = View.GONE
-            btnClearHistory.visibility = View.GONE
-        } else {
+    private fun toggleHealthy(){
+        updateHistoryUI("healthy")
+    }
+
+    private fun toggleUnhealthy(){
+
+        updateHistoryUI("unhealthy")
+    }
+
+    @SuppressLint("SuspiciousIndentation")
+    private fun updateHistoryUI(toggle: String) {
+
+
             txtNoHistory.visibility = View.GONE
             recyclerHistory.visibility = View.VISIBLE
             btnClearHistory.visibility = View.VISIBLE
-            historyAdapter.updateData(historyList)
-        }
+            btnHealthyToggle?.visibility = View.VISIBLE
+            btnUnhealthyToggle?.visibility = View.VISIBLE
+            btnAllToggle?.visibility = View.VISIBLE
+            val prefs = getSharedPreferences("cassava_history", MODE_PRIVATE)
+            val jsonStr = prefs.getString("history_json", null) ?: return
+            historyListDisplay.clear()
+            try {
+                val array = JSONArray(jsonStr)
+                if(toggle == "all"){
+                    for (i in 0 until array.length()) {
+                        val obj = array.getJSONObject(i)
+
+                            historyListDisplay.add(
+                                HistoryItem(
+                                    id = obj.getString("id"),
+                                    label = obj.getString("label"),
+                                    confidence = obj.getDouble("confidence").toFloat(),
+                                    date = obj.getString("date"),
+                                    imagePath = obj.getString("imagePath"),
+                                    index = obj.getInt("index")
+                                )
+                            )
+                    }
+                } else if(toggle == "healthy"){
+                    for (i in 0 until array.length()) {
+                        val obj = array.getJSONObject(i)
+                        if (obj.getString("label") == "Healthy" ) {
+                            historyListDisplay.add(
+                                HistoryItem(
+                                    id = obj.getString("id"),
+                                    label = obj.getString("label"),
+                                    confidence = obj.getDouble("confidence").toFloat(),
+                                    date = obj.getString("date"),
+                                    imagePath = obj.getString("imagePath"),
+                                    index = obj.getInt("index")
+                                )
+                            )
+                        }
+                    }
+                } else if(toggle == "unhealthy"){
+                    for (i in 0 until array.length()) {
+                        val obj = array.getJSONObject(i)
+                        if (obj.getString("label") != "Healthy" ) {
+                            historyListDisplay.add(
+                                HistoryItem(
+                                    id = obj.getString("id"),
+                                    label = obj.getString("label"),
+                                    confidence = obj.getDouble("confidence").toFloat(),
+                                    date = obj.getString("date"),
+                                    imagePath = obj.getString("imagePath"),
+                                    index = obj.getInt("index")
+                                )
+                            )
+                        }
+                    }
+                }
+
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            historyAdapter.updateData(historyListDisplay)
+
     }
 
     private fun deleteHistoryItem(item: HistoryItem) {
-        val index = historyList.indexOfFirst { it.id == item.id }
-        if (index != -1) {
-            historyList.removeAt(index)
-            saveHistoryToSharedPrefs()
-            updateHistoryUI()
-            Toast.makeText(this, "Item removed from history", Toast.LENGTH_SHORT).show()
-        }
+        AlertDialog.Builder(this)
+            .setTitle("Delete Scan")
+            .setMessage("Are you sure you want to delete this record?")
+            .setPositiveButton("Delete") { _, _ ->
+                val index = historyList.indexOfFirst { it.id == item.id }
+                if (index != -1) {
+                    historyList.removeAt(index)
+                    saveHistoryToSharedPrefs()
+                    updateHistoryUI("all")
+                    Toast.makeText(this, "Item removed", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun clearHistory() {
-        historyList.clear()
-        saveHistoryToSharedPrefs()
-        updateHistoryUI()
+        AlertDialog.Builder(this)
+            .setTitle("Delete History")
+            .setMessage("Are you sure you want to delete ALL records?")
+            .setPositiveButton("Delete") { _, _ ->
+                historyList.clear()
+                saveHistoryToSharedPrefs()
+                updateHistoryUI("all")
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     // =========================================================================
@@ -735,6 +883,7 @@ class MainActivity : AppCompatActivity() {
             val enhancedPredictions = mutableListOf<Int>()
             val groundTruths = mutableListOf<Int>()
             var processedCount = 0
+            var skippedNonCassava = 0
             var skippedLowConfidence = 0
 
             for ((classIndex, uris) in batchImages) {
@@ -745,7 +894,15 @@ class MainActivity : AppCompatActivity() {
                         inputStream?.close()
                         if (bitmap != null) {
                             processedCount++
-                            val result = classifier.classifyImage(bitmap)
+                            // Stage 1: Gatekeeper binary filter (tau = 0.70)
+                            val gatekeeperResult = classifier.checkGatekeeper(bitmap)
+                            if (!gatekeeperResult.isCassava) {
+                                skippedNonCassava++
+                                continue
+                            }
+
+                            // Stage 2: Disease classification
+                            val result = classifier.classifyImage(bitmap, gatekeeperResult)
                             // Selective Classification: Exclude predictions falling below 60% confidence threshold
                             if (result.enhancedResult.confidence < CassavaClassifier.CONFIDENCE_THRESHOLD) {
                                 skippedLowConfidence++
@@ -765,7 +922,7 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread {
                     Toast.makeText(
                         this,
-                        "All $totalImages image(s) fell below the 60% confidence threshold and were excluded from evaluation.",
+                        "All $totalImages image(s) were excluded from evaluation (Non-cassava: $skippedNonCassava, Low-confidence < 60%: $skippedLowConfidence).",
                         Toast.LENGTH_LONG
                     ).show()
                     btnRunBatchTest?.isEnabled = true
@@ -782,7 +939,14 @@ class MainActivity : AppCompatActivity() {
             val enhancedMetrics = calculateMetrics(enhancedPredictions, groundTruths, 5)
 
             runOnUiThread {
-                displayBatchResults(baseMetrics, enhancedMetrics, totalImages, evaluatedCount, skippedLowConfidence)
+                displayBatchResults(
+                    baseMetrics,
+                    enhancedMetrics,
+                    totalImages,
+                    evaluatedCount,
+                    skippedNonCassava,
+                    skippedLowConfidence
+                )
                 saveBatchHistory(evaluatedCount, baseMetrics, enhancedMetrics)
                 btnRunBatchTest?.isEnabled = true
                 progressBatch?.visibility = View.GONE
@@ -880,14 +1044,16 @@ class MainActivity : AppCompatActivity() {
         enhanced: Metrics,
         total: Int,
         evaluated: Int,
-        skipped: Int
+        skippedNonCassava: Int,
+        skippedLowConfidence: Int
     ) {
         layoutBatchResults?.visibility = View.VISIBLE
         val resultText = """
             BATCH SUMMARY:
             • Total Images Uploaded: $total
-            • Evaluated (≥ 60% Conf.): $evaluated
-            • Excluded (< 60% Conf.): $skipped
+            • Evaluated (Pass Gatekeeper & ≥ 60% Conf.): $evaluated
+            • Excluded (Not Cassava Leaf < 70%): $skippedNonCassava
+            • Excluded (Low Confidence < 60%): $skippedLowConfidence
             
             BASE MODEL METRICS:
             Accuracy: ${formatPercent(base.accuracy)}
