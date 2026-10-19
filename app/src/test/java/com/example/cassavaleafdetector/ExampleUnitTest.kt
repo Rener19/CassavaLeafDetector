@@ -221,4 +221,70 @@ class ExampleUnitTest {
         val passedAtHundred = confidences.count { it >= 1.00f }
         assertEquals(0, passedAtHundred)
     }
+
+    @Test
+    fun testActiveClassesMacroMetricsSingleClass() {
+        // Scenario: Exactly 1 image evaluated (Healthy = 4), predicted correctly as 4
+        val predictions = listOf(4)
+        val groundTruths = listOf(4)
+        val metrics = MainActivity.calculateMetrics(predictions, groundTruths, 5)
+
+        // With active-class averaging, metrics reflect the 1 active class without 0% penalties from untested classes
+        assertEquals(1.0, metrics.accuracy, 0.0001)
+        assertEquals(1.0, metrics.precision, 0.0001)
+        assertEquals(1.0, metrics.recall, 0.0001)
+        assertEquals(1.0, metrics.f1Score, 0.0001)
+        assertEquals(1.0, metrics.macroF1, 0.0001)
+        assertEquals(1.0, metrics.tnr, 0.0001)
+        assertEquals(1.0, metrics.mcc, 0.0001)
+    }
+
+    @Test
+    fun testActiveClassesMacroMetricsPartialBatch() {
+        // Scenario: 2 classes tested (CBB = 0, Healthy = 4), 1 of each, both predicted correctly
+        val predictions = listOf(0, 4)
+        val groundTruths = listOf(0, 4)
+        val metrics = MainActivity.calculateMetrics(predictions, groundTruths, 5)
+
+        assertEquals(1.0, metrics.accuracy, 0.0001)
+        assertEquals(1.0, metrics.precision, 0.0001)
+        assertEquals(1.0, metrics.recall, 0.0001)
+        assertEquals(1.0, metrics.f1Score, 0.0001)
+        assertEquals(1.0, metrics.macroF1, 0.0001)
+        assertEquals(1.0, metrics.tnr, 0.0001)
+        assertEquals(1.0, metrics.mcc, 0.0001)
+    }
+
+    @Test
+    fun testActiveClassesMacroMetricsPartialBatchWithConfusion() {
+        // Scenario: 2 classes tested (CBB = 0, Healthy = 4), both predicted as CBB = 0
+        // Ground truths: [0, 4], Predictions: [0, 0]
+        val predictions = listOf(0, 0)
+        val groundTruths = listOf(0, 4)
+        val metrics = MainActivity.calculateMetrics(predictions, groundTruths, 5)
+
+        // Class 0: TP=1, FP=1, FN=0 -> Precision=0.5, Recall=1.0, F1=0.667, TNR=0.0
+        // Class 4: TP=0, FP=0, FN=1 -> Precision=0.0, Recall=0.0, F1=0.0, TNR=1.0
+        // Macro: (0.5+0.0)/2 = 0.25 precision, (1.0+0.0)/2 = 0.50 recall, accuracy = 0.50
+        assertEquals(0.50, metrics.accuracy, 0.0001)
+        assertEquals(0.25, metrics.precision, 0.0001)
+        assertEquals(0.50, metrics.recall, 0.0001)
+        assertEquals(0.50, metrics.tnr, 0.0001)
+    }
+
+    @Test
+    fun testActiveClassesMacroMetricsFullBatch() {
+        // Scenario: All 5 classes tested and predicted correctly
+        val predictions = listOf(0, 1, 2, 3, 4)
+        val groundTruths = listOf(0, 1, 2, 3, 4)
+        val metrics = MainActivity.calculateMetrics(predictions, groundTruths, 5)
+
+        assertEquals(1.0, metrics.accuracy, 0.0001)
+        assertEquals(1.0, metrics.precision, 0.0001)
+        assertEquals(1.0, metrics.recall, 0.0001)
+        assertEquals(1.0, metrics.f1Score, 0.0001)
+        assertEquals(1.0, metrics.macroF1, 0.0001)
+        assertEquals(1.0, metrics.tnr, 0.0001)
+        assertEquals(1.0, metrics.mcc, 0.0001)
+    }
 }

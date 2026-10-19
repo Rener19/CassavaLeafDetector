@@ -950,11 +950,28 @@ class MainActivity : AppCompatActivity() {
                 return@execute
             }
 
-            // Compute rigorous academic metrics across the 5 disease classes
+            // Compute rigorous academic metrics across active disease classes
             val evaluatedCount = enhancedPredictions.size
             val baseMetrics = calculateMetrics(basePredictions, groundTruths, 5)
             val enhancedMetrics = calculateMetrics(enhancedPredictions, groundTruths, 5)
             val currentThreshold = batchConfidenceThreshold
+
+            val activeClassIndices = (groundTruths + basePredictions + enhancedPredictions).distinct().filter { it in 0 until 5 }.sorted()
+            val activeClassNames = activeClassIndices.map { index ->
+                when (index) {
+                    0 -> "CBB"
+                    1 -> "CBSD"
+                    2 -> "CGM"
+                    3 -> "CMD"
+                    4 -> "Healthy"
+                    else -> "Class $index"
+                }
+            }
+            val activeInfo = if (activeClassIndices.size == 5) {
+                "All 5 Classes (CBB, CBSD, CGM, CMD, Healthy)"
+            } else {
+                "${activeClassIndices.size}/5 Classes (${activeClassNames.joinToString(", ")})"
+            }
 
             runOnUiThread {
                 displayBatchResults(
@@ -964,7 +981,8 @@ class MainActivity : AppCompatActivity() {
                     evaluatedCount,
                     skippedNonCassava,
                     skippedLowConfidence,
-                    currentThreshold
+                    currentThreshold,
+                    activeInfo
                 )
                 saveBatchHistory(evaluatedCount, baseMetrics, enhancedMetrics)
                 btnRunBatchTest?.isEnabled = true
@@ -977,85 +995,109 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * Calculates multi-class confusion matrix and comprehensive evaluation metrics:
-     *
-     * 1. Overall Accuracy = Correct Predictions / Total Predictions
-     * 2. Per-Class One-vs-Rest Confusion Matrix:
-     *    - TP_c: Predicted = c AND Truth = c
-     *    - FP_c: Predicted = c AND Truth != c
-     *    - FN_c: Predicted != c AND Truth = c
-     *    - TN_c: Predicted != c AND Truth != c
-     * 3. Macro Precision = (1 / K) * sum(TP_c / (TP_c + FP_c))
-     * 4. Macro Recall (Sensitivity) = (1 / K) * sum(TP_c / (TP_c + FN_c))
-     * 5. Macro F1 = (1 / K) * sum(2 * Prec_c * Rec_c / (Prec_c + Rec_c))
-     * 6. True Negative Rate (Macro Specificity) = (1 / K) * sum(TN_c / (TN_c + FP_c))
-     * 7. Matthews Correlation Coefficient (MCC):
-     *    MCC_c = (TP*TN - FP*FN) / sqrt((TP+FP)*(TP+FN)*(TN+FP)*(TN+FN))
-     *    Macro MCC = (1 / K) * sum(MCC_c)
-     */
-    private fun calculateMetrics(predictions: List<Int>, groundTruths: List<Int>, numClasses: Int): Metrics {
-        if (predictions.isEmpty()) return Metrics(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+    companion object {
+        /**
+         * Calculates multi-class confusion matrix and comprehensive evaluation metrics:
+         *
+         * 1. Overall Accuracy = Correct Predictions / Total Predictions
+         * 2. Per-Class One-vs-Rest Confusion Matrix:
+         *    - TP_c: Predicted = c AND Truth = c
+         *    - FP_c: Predicted = c AND Truth != c
+         *    - FN_c: Predicted != c AND Truth = c
+         *    - TN_c: Predicted != c AND Truth != c
+         * 3. Macro Precision = (1 / K_active) * sum(TP_c / (TP_c + FP_c))
+         * 4. Macro Recall (Sensitivity) = (1 / K_active) * sum(TP_c / (TP_c + FN_c))
+         * 5. Macro F1 = (1 / K_active) * sum(2 * Prec_c * Rec_c / (Prec_c + Rec_c))
+         * 6. True Negative Rate (Macro Specificity) = (1 / K_active) * sum(TN_c / (TN_c + FP_c))
+         * 7. Matthews Correlation Coefficient (MCC):
+         *    MCC_c = (TP*TN - FP*FN) / sqrt((TP+FP)*(TP+FN)*(TN+FP)*(TN+FN))
+         *    Macro MCC = (1 / K_active) * sum(MCC_c)
+         *
+         * Active-Class Macro Averaging (Scikit-Learn standard):
+         * When evaluating a batch dataset containing only a subset of classes (e.g. 2 of 5),
+         * macro metrics are averaged over the represented classes (ground truth or predicted).
+         * This avoids artificial zero-division penalties on untested classes while properly
+         * penalizing false alarms.
+         */
+        internal fun calculateMetrics(predictions: List<Int>, groundTruths: List<Int>, numClasses: Int): Metrics {
+            if (predictions.isEmpty()) return Metrics(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
 
-        var correct = 0
-        val tp = DoubleArray(numClasses)
-        val tn = DoubleArray(numClasses)
-        val fp = DoubleArray(numClasses)
-        val fn = DoubleArray(numClasses)
+            var correct = 0
+            val tp = DoubleArray(numClasses)
+            val tn = DoubleArray(numClasses)
+            val fp = DoubleArray(numClasses)
+            val fn = DoubleArray(numClasses)
 
-        for (i in predictions.indices) {
-            val p = predictions[i]
-            val t = groundTruths[i]
-            if (p == t) correct++
+            for (i in predictions.indices) {
+                val p = predictions[i]
+                val t = groundTruths[i]
+                if (p == t) correct++
 
-            for (c in 0 until numClasses) {
-                if (p == c && t == c) tp[c]++
-                else if (p == c && t != c) fp[c]++
-                else if (p != c && t == c) fn[c]++
-                else tn[c]++
+                for (c in 0 until numClasses) {
+                    if (p == c && t == c) tp[c]++
+                    else if (p == c && t != c) fp[c]++
+                    else if (p != c && t == c) fn[c]++
+                    else tn[c]++
+                }
             }
+
+            val accuracy = correct.toDouble() / predictions.size
+
+            // Identify active classes present in ground truth or predicted by the model
+            val activeClasses = (groundTruths + predictions).distinct().filter { it in 0 until numClasses }.sorted()
+            val activeK = activeClasses.size.coerceAtLeast(1)
+
+            var macroPrecision = 0.0
+            var macroRecall = 0.0
+            var macroF1 = 0.0
+            var macroTnr = 0.0
+            var macroMcc = 0.0
+
+            for (c in activeClasses) {
+                val precision = if (tp[c] + fp[c] > 0) tp[c] / (tp[c] + fp[c]) else 0.0
+                val recall = if (tp[c] + fn[c] > 0) tp[c] / (tp[c] + fn[c]) else 0.0
+                val f1 = if (precision + recall > 0) 2.0 * precision * recall / (precision + recall) else 0.0
+                val tnr = if (tn[c] + fp[c] > 0) {
+                    tn[c] / (tn[c] + fp[c])
+                } else if (fp[c] == 0.0) {
+                    1.0
+                } else {
+                    0.0
+                }
+
+                val denominator = Math.sqrt((tp[c] + fp[c]) * (tp[c] + fn[c]) * (tn[c] + fp[c]) * (tn[c] + fn[c]))
+                val mcc = if (denominator > 0) {
+                    (tp[c] * tn[c] - fp[c] * fn[c]) / denominator
+                } else if (tp[c] > 0 && fp[c] == 0.0 && fn[c] == 0.0) {
+                    1.0
+                } else {
+                    0.0
+                }
+
+                macroPrecision += precision
+                macroRecall += recall
+                macroF1 += f1
+                macroTnr += tnr
+                macroMcc += mcc
+            }
+
+            macroPrecision /= activeK
+            macroRecall /= activeK
+            macroF1 /= activeK
+            macroTnr /= activeK
+            macroMcc /= activeK
+
+            // Note: Micro F1 in multi-class single-label is mathematically equal to Accuracy
+            return Metrics(
+                accuracy = accuracy,
+                precision = macroPrecision,
+                recall = macroRecall,
+                f1Score = accuracy,
+                tnr = macroTnr,
+                macroF1 = macroF1,
+                mcc = macroMcc
+            )
         }
-
-        val accuracy = correct.toDouble() / predictions.size
-
-        var macroPrecision = 0.0
-        var macroRecall = 0.0
-        var macroF1 = 0.0
-        var macroTnr = 0.0
-        var macroMcc = 0.0
-
-        for (c in 0 until numClasses) {
-            val precision = if (tp[c] + fp[c] > 0) tp[c] / (tp[c] + fp[c]) else 0.0
-            val recall = if (tp[c] + fn[c] > 0) tp[c] / (tp[c] + fn[c]) else 0.0
-            val f1 = if (precision + recall > 0) 2.0 * precision * recall / (precision + recall) else 0.0
-            val tnr = if (tn[c] + fp[c] > 0) tn[c] / (tn[c] + fp[c]) else 0.0
-
-            val denominator = Math.sqrt((tp[c] + fp[c]) * (tp[c] + fn[c]) * (tn[c] + fp[c]) * (tn[c] + fn[c]))
-            val mcc = if (denominator > 0) (tp[c] * tn[c] - fp[c] * fn[c]) / denominator else 0.0
-
-            macroPrecision += precision
-            macroRecall += recall
-            macroF1 += f1
-            macroTnr += tnr
-            macroMcc += mcc
-        }
-
-        macroPrecision /= numClasses
-        macroRecall /= numClasses
-        macroF1 /= numClasses
-        macroTnr /= numClasses
-        macroMcc /= numClasses
-
-        // Note: Micro F1 in multi-class single-label is mathematically equal to Accuracy
-        return Metrics(
-            accuracy = accuracy,
-            precision = macroPrecision,
-            recall = macroRecall,
-            f1Score = accuracy,
-            tnr = macroTnr,
-            macroF1 = macroF1,
-            mcc = macroMcc
-        )
     }
 
     private fun displayBatchResults(
@@ -1065,7 +1107,8 @@ class MainActivity : AppCompatActivity() {
         evaluated: Int,
         skippedNonCassava: Int,
         skippedLowConfidence: Int,
-        confidenceThreshold: Float
+        confidenceThreshold: Float,
+        activeClassesInfo: String
     ) {
         layoutBatchResults?.visibility = View.VISIBLE
         val thresholdPercent = (confidenceThreshold * 100).toInt()
@@ -1073,6 +1116,7 @@ class MainActivity : AppCompatActivity() {
             BATCH SUMMARY:
             • Total Images Uploaded: $total
             • Evaluated (Pass Gatekeeper & ≥ $thresholdPercent% Conf.): $evaluated
+            • Active Taxonomy Classes: $activeClassesInfo
             • Excluded (Not Cassava Leaf < 70%): $skippedNonCassava
             • Excluded (Low Confidence < $thresholdPercent%): $skippedLowConfidence
             
