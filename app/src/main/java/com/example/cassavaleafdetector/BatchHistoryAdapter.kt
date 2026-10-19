@@ -51,7 +51,8 @@ data class BatchHistoryItem(
     val date: String,
     val totalImages: Int,
     val baseMetrics: Metrics,
-    val enhancedMetrics: Metrics
+    val enhancedMetrics: Metrics,
+    val activeClassesInfo: String = ""
 )
 
 /**
@@ -80,7 +81,8 @@ class BatchHistoryAdapter(
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
         val item = historyList[position]
-        holder.txtTitle.text = "Batch Test: ${item.date} (${item.totalImages} images)"
+        val activeSummary = if (item.activeClassesInfo.isNotEmpty()) " [${item.activeClassesInfo.split(" (").first()}]" else ""
+        holder.txtTitle.text = "Batch Test: ${item.date} (${item.totalImages} images)$activeSummary"
 
         val details = String.format(
             Locale.US,

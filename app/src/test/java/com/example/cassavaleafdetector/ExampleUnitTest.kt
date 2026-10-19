@@ -293,4 +293,38 @@ class ExampleUnitTest {
         assertEquals(1.0, metrics.tnr, 0.0001)
         assertEquals(1.0, metrics.mcc, 0.0001)
     }
+
+    @Test
+    fun testActiveClassesMacroMetricsThreeClasses() {
+        // Scenario: 3 classes tested (0, 1, 4), 1 of each, all predicted correctly
+        val predictions = listOf(0, 1, 4)
+        val groundTruths = listOf(0, 1, 4)
+        val metrics = MainActivity.calculateMetrics(predictions, groundTruths, 5)
+
+        assertEquals(1.0, metrics.accuracy, 0.0001)
+        assertEquals(1.0, metrics.precision, 0.0001)
+        assertEquals(1.0, metrics.recall, 0.0001)
+        assertEquals(1.0, metrics.tpr, 0.0001)
+        assertEquals(1.0, metrics.tnr, 0.0001)
+        assertEquals(1.0, metrics.f1Score, 0.0001)
+        assertEquals(1.0, metrics.macroF1, 0.0001)
+        assertEquals(1.0, metrics.mcc, 0.0001)
+    }
+
+    @Test
+    fun testActiveClassesMacroMetricsFourClasses() {
+        // Scenario: 4 classes tested (0, 1, 2, 4), 1 of each, all predicted correctly
+        val predictions = listOf(0, 1, 2, 4)
+        val groundTruths = listOf(0, 1, 2, 4)
+        val metrics = MainActivity.calculateMetrics(predictions, groundTruths, 5)
+
+        assertEquals(1.0, metrics.accuracy, 0.0001)
+        assertEquals(1.0, metrics.precision, 0.0001)
+        assertEquals(1.0, metrics.recall, 0.0001)
+        assertEquals(1.0, metrics.tpr, 0.0001)
+        assertEquals(1.0, metrics.tnr, 0.0001)
+        assertEquals(1.0, metrics.f1Score, 0.0001)
+        assertEquals(1.0, metrics.macroF1, 0.0001)
+        assertEquals(1.0, metrics.mcc, 0.0001)
+    }
 }

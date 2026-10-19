@@ -987,7 +987,7 @@ class MainActivity : AppCompatActivity() {
                     currentThreshold,
                     activeInfo
                 )
-                saveBatchHistory(evaluatedCount, baseMetrics, enhancedMetrics)
+                saveBatchHistory(evaluatedCount, baseMetrics, enhancedMetrics, activeInfo)
                 btnRunBatchTest?.isEnabled = true
                 progressBatch?.visibility = View.GONE
 
@@ -1165,14 +1165,15 @@ class MainActivity : AppCompatActivity() {
     // Batch-Test History Persistence
     // =========================================================================
 
-    private fun saveBatchHistory(totalImages: Int, baseMetrics: Metrics, enhancedMetrics: Metrics) {
+    private fun saveBatchHistory(totalImages: Int, baseMetrics: Metrics, enhancedMetrics: Metrics, activeClassesInfo: String = "") {
         val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date())
         val item = BatchHistoryItem(
             id = UUID.randomUUID().toString(),
             date = dateStr,
             totalImages = totalImages,
             baseMetrics = baseMetrics,
-            enhancedMetrics = enhancedMetrics
+            enhancedMetrics = enhancedMetrics,
+            activeClassesInfo = activeClassesInfo
         )
         batchHistoryList.add(0, item)
         saveBatchHistoryToSharedPrefs()
@@ -1187,6 +1188,7 @@ class MainActivity : AppCompatActivity() {
             obj.put("id", h.id)
             obj.put("date", h.date)
             obj.put("totalImages", h.totalImages)
+            obj.put("activeInfo", h.activeClassesInfo)
 
             val bObj = JSONObject()
             bObj.put("acc", h.baseMetrics.accuracy)
@@ -1254,7 +1256,8 @@ class MainActivity : AppCompatActivity() {
                         date = obj.getString("date"),
                         totalImages = obj.getInt("totalImages"),
                         baseMetrics = baseMetrics,
-                        enhancedMetrics = enhancedMetrics
+                        enhancedMetrics = enhancedMetrics,
+                        activeClassesInfo = obj.optString("activeInfo", "")
                     )
                 )
             }
@@ -1278,10 +1281,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showBatchHistoryItemDialog(item: BatchHistoryItem) {
+        val classLine = if (item.activeClassesInfo.isNotEmpty()) "• Tested Classes: ${item.activeClassesInfo}\n" else ""
         val details = """
             Batch Test Date: ${item.date}
             Evaluated Images: ${item.totalImages}
-            
+            $classLine
             BASE MODEL METRICS:
             Accuracy: ${formatPercent(item.baseMetrics.accuracy)}
             Precision: ${formatPercent(item.baseMetrics.precision)}
