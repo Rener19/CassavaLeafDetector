@@ -352,6 +352,9 @@ class MainActivity : AppCompatActivity() {
         recyclerBatchHistory?.layoutManager = LinearLayoutManager(this)
         batchHistoryAdapter = BatchHistoryAdapter(
             historyList = batchHistoryList,
+            onItemClick = { batchItem ->
+                showBatchHistoryItemDialog(batchItem)
+            },
             onDeleteClick = { batchItem ->
                 deleteBatchHistoryItem(batchItem)
             }
@@ -1020,7 +1023,16 @@ class MainActivity : AppCompatActivity() {
          * penalizing false alarms.
          */
         internal fun calculateMetrics(predictions: List<Int>, groundTruths: List<Int>, numClasses: Int): Metrics {
-            if (predictions.isEmpty()) return Metrics(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+            if (predictions.isEmpty()) return Metrics(
+                accuracy = 0.0,
+                precision = 0.0,
+                recall = 0.0,
+                tpr = 0.0,
+                tnr = 0.0,
+                f1Score = 0.0,
+                macroF1 = 0.0,
+                mcc = 0.0
+            )
 
             var correct = 0
             val tp = DoubleArray(numClasses)
@@ -1087,13 +1099,15 @@ class MainActivity : AppCompatActivity() {
             macroTnr /= activeK
             macroMcc /= activeK
 
-            // Note: Micro F1 in multi-class single-label is mathematically equal to Accuracy
+            // Note: Micro F1 in multi-class single-label is mathematically equal to Accuracy.
+            // True Positive Rate (Sensitivity) is identical to Recall.
             return Metrics(
                 accuracy = accuracy,
                 precision = macroPrecision,
                 recall = macroRecall,
-                f1Score = accuracy,
+                tpr = macroRecall,
                 tnr = macroTnr,
+                f1Score = accuracy,
                 macroF1 = macroF1,
                 mcc = macroMcc
             )
@@ -1124,8 +1138,9 @@ class MainActivity : AppCompatActivity() {
             Accuracy: ${formatPercent(base.accuracy)}
             Precision: ${formatPercent(base.precision)}
             Recall: ${formatPercent(base.recall)}
-            F1 Score: ${formatPercent(base.f1Score)}
+            True Positive Rate: ${formatPercent(base.tpr)}
             True Negative Rate: ${formatPercent(base.tnr)}
+            F1 Score: ${formatPercent(base.f1Score)}
             Macro F1: ${formatPercent(base.macroF1)}
             MCC: ${formatDouble(base.mcc)}
             
@@ -1133,8 +1148,9 @@ class MainActivity : AppCompatActivity() {
             Accuracy: ${formatPercent(enhanced.accuracy)}
             Precision: ${formatPercent(enhanced.precision)}
             Recall: ${formatPercent(enhanced.recall)}
-            F1 Score: ${formatPercent(enhanced.f1Score)}
+            True Positive Rate: ${formatPercent(enhanced.tpr)}
             True Negative Rate: ${formatPercent(enhanced.tnr)}
+            F1 Score: ${formatPercent(enhanced.f1Score)}
             Macro F1: ${formatPercent(enhanced.macroF1)}
             MCC: ${formatDouble(enhanced.mcc)}
         """.trimIndent()
@@ -1176,6 +1192,7 @@ class MainActivity : AppCompatActivity() {
             bObj.put("acc", h.baseMetrics.accuracy)
             bObj.put("prec", h.baseMetrics.precision)
             bObj.put("rec", h.baseMetrics.recall)
+            bObj.put("tpr", h.baseMetrics.tpr)
             bObj.put("f1", h.baseMetrics.f1Score)
             bObj.put("tnr", h.baseMetrics.tnr)
             bObj.put("macroF1", h.baseMetrics.macroF1)
@@ -1186,6 +1203,7 @@ class MainActivity : AppCompatActivity() {
             eObj.put("acc", h.enhancedMetrics.accuracy)
             eObj.put("prec", h.enhancedMetrics.precision)
             eObj.put("rec", h.enhancedMetrics.recall)
+            eObj.put("tpr", h.enhancedMetrics.tpr)
             eObj.put("f1", h.enhancedMetrics.f1Score)
             eObj.put("tnr", h.enhancedMetrics.tnr)
             eObj.put("macroF1", h.enhancedMetrics.macroF1)
@@ -1211,8 +1229,9 @@ class MainActivity : AppCompatActivity() {
                     accuracy = bObj.getDouble("acc"),
                     precision = bObj.getDouble("prec"),
                     recall = bObj.getDouble("rec"),
-                    f1Score = bObj.getDouble("f1"),
+                    tpr = bObj.optDouble("tpr", bObj.getDouble("rec")),
                     tnr = bObj.getDouble("tnr"),
+                    f1Score = bObj.getDouble("f1"),
                     macroF1 = bObj.optDouble("macroF1", bObj.getDouble("f1")),
                     mcc = bObj.getDouble("mcc")
                 )
@@ -1222,8 +1241,9 @@ class MainActivity : AppCompatActivity() {
                     accuracy = eObj.getDouble("acc"),
                     precision = eObj.getDouble("prec"),
                     recall = eObj.getDouble("rec"),
-                    f1Score = eObj.getDouble("f1"),
+                    tpr = eObj.optDouble("tpr", eObj.getDouble("rec")),
                     tnr = eObj.getDouble("tnr"),
+                    f1Score = eObj.getDouble("f1"),
                     macroF1 = eObj.optDouble("macroF1", eObj.getDouble("f1")),
                     mcc = eObj.getDouble("mcc")
                 )
@@ -1255,6 +1275,39 @@ class MainActivity : AppCompatActivity() {
             btnClearBatchHistory?.visibility = View.VISIBLE
             batchHistoryAdapter?.updateData(batchHistoryList)
         }
+    }
+
+    private fun showBatchHistoryItemDialog(item: BatchHistoryItem) {
+        val details = """
+            Batch Test Date: ${item.date}
+            Evaluated Images: ${item.totalImages}
+            
+            BASE MODEL METRICS:
+            Accuracy: ${formatPercent(item.baseMetrics.accuracy)}
+            Precision: ${formatPercent(item.baseMetrics.precision)}
+            Recall: ${formatPercent(item.baseMetrics.recall)}
+            True Positive Rate: ${formatPercent(item.baseMetrics.tpr)}
+            True Negative Rate: ${formatPercent(item.baseMetrics.tnr)}
+            F1 Score: ${formatPercent(item.baseMetrics.f1Score)}
+            Macro F1: ${formatPercent(item.baseMetrics.macroF1)}
+            MCC: ${formatDouble(item.baseMetrics.mcc)}
+            
+            ENHANCED MODEL METRICS:
+            Accuracy: ${formatPercent(item.enhancedMetrics.accuracy)}
+            Precision: ${formatPercent(item.enhancedMetrics.precision)}
+            Recall: ${formatPercent(item.enhancedMetrics.recall)}
+            True Positive Rate: ${formatPercent(item.enhancedMetrics.tpr)}
+            True Negative Rate: ${formatPercent(item.enhancedMetrics.tnr)}
+            F1 Score: ${formatPercent(item.enhancedMetrics.f1Score)}
+            Macro F1: ${formatPercent(item.enhancedMetrics.macroF1)}
+            MCC: ${formatDouble(item.enhancedMetrics.mcc)}
+        """.trimIndent()
+
+        AlertDialog.Builder(this)
+            .setTitle("Batch Test Record")
+            .setMessage(details)
+            .setPositiveButton("Close", null)
+            .show()
     }
 
     private fun deleteBatchHistoryItem(item: BatchHistoryItem) {

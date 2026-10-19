@@ -95,16 +95,18 @@ class ExampleUnitTest {
             accuracy = 0.85,
             precision = 0.86,
             recall = 0.84,
-            f1Score = 0.85,
+            tpr = 0.84,
             tnr = 0.96,
+            f1Score = 0.85,
             macroF1 = 0.85,
             mcc = 0.81
         )
         assertEquals(0.85, metrics.accuracy, 0.0001)
         assertEquals(0.86, metrics.precision, 0.0001)
         assertEquals(0.84, metrics.recall, 0.0001)
-        assertEquals(0.85, metrics.f1Score, 0.0001)
+        assertEquals(0.84, metrics.tpr, 0.0001)
         assertEquals(0.96, metrics.tnr, 0.0001)
+        assertEquals(0.85, metrics.f1Score, 0.0001)
         assertEquals(0.85, metrics.macroF1, 0.0001)
         assertEquals(0.81, metrics.mcc, 0.0001)
     }
@@ -233,6 +235,7 @@ class ExampleUnitTest {
         assertEquals(1.0, metrics.accuracy, 0.0001)
         assertEquals(1.0, metrics.precision, 0.0001)
         assertEquals(1.0, metrics.recall, 0.0001)
+        assertEquals(1.0, metrics.tpr, 0.0001)
         assertEquals(1.0, metrics.f1Score, 0.0001)
         assertEquals(1.0, metrics.macroF1, 0.0001)
         assertEquals(1.0, metrics.tnr, 0.0001)
@@ -249,6 +252,7 @@ class ExampleUnitTest {
         assertEquals(1.0, metrics.accuracy, 0.0001)
         assertEquals(1.0, metrics.precision, 0.0001)
         assertEquals(1.0, metrics.recall, 0.0001)
+        assertEquals(1.0, metrics.tpr, 0.0001)
         assertEquals(1.0, metrics.f1Score, 0.0001)
         assertEquals(1.0, metrics.macroF1, 0.0001)
         assertEquals(1.0, metrics.tnr, 0.0001)
@@ -269,6 +273,7 @@ class ExampleUnitTest {
         assertEquals(0.50, metrics.accuracy, 0.0001)
         assertEquals(0.25, metrics.precision, 0.0001)
         assertEquals(0.50, metrics.recall, 0.0001)
+        assertEquals(0.50, metrics.tpr, 0.0001)
         assertEquals(0.50, metrics.tnr, 0.0001)
     }
 
@@ -282,6 +287,7 @@ class ExampleUnitTest {
         assertEquals(1.0, metrics.accuracy, 0.0001)
         assertEquals(1.0, metrics.precision, 0.0001)
         assertEquals(1.0, metrics.recall, 0.0001)
+        assertEquals(1.0, metrics.tpr, 0.0001)
         assertEquals(1.0, metrics.f1Score, 0.0001)
         assertEquals(1.0, metrics.macroF1, 0.0001)
         assertEquals(1.0, metrics.tnr, 0.0001)

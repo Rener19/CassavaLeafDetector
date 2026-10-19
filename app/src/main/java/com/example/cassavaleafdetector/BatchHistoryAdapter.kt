@@ -15,10 +15,11 @@ import java.util.Locale
  * Quantitative performance evaluation metrics for a classifier on a batch dataset.
  *
  * @property accuracy Proportion of correctly classified leaves: (TP + TN) / (Total).
- * @property precision Macro-averaged positive predictive value: Mean of TP / (TP + FP) across all classes.
- * @property recall Macro-averaged sensitivity / true positive rate: Mean of TP / (TP + FN) across all classes.
+ * @property precision Macro-averaged positive predictive value: Mean of TP / (TP + FP) across active classes.
+ * @property recall Macro-averaged sensitivity / true positive rate: Mean of TP / (TP + FN) across active classes.
+ * @property tpr True Positive Rate (Sensitivity / Recall): Mean of TP / (TP + FN) across active classes.
+ * @property tnr True Negative Rate (Macro-averaged Specificity): Mean of TN / (TN + FP) across active classes.
  * @property f1Score Micro-averaged F1 score (mathematically equivalent to overall accuracy in single-label multi-class problems).
- * @property tnr True Negative Rate (Macro-averaged Specificity): Mean of TN / (TN + FP) across all classes.
  * @property macroF1 Macro-averaged F1 score: Mean of per-class harmonic means 2*(P*R)/(P+R).
  * @property mcc Matthews Correlation Coefficient: Balanced quality metric resilient to severe class imbalance.
  */
@@ -26,8 +27,9 @@ data class Metrics(
     val accuracy: Double,
     val precision: Double,
     val recall: Double,
-    val f1Score: Double,
+    val tpr: Double = recall,
     val tnr: Double,
+    val f1Score: Double,
     val macroF1: Double,
     val mcc: Double
 )
@@ -60,6 +62,7 @@ data class BatchHistoryItem(
  */
 class BatchHistoryAdapter(
     private var historyList: List<BatchHistoryItem>,
+    private val onItemClick: (BatchHistoryItem) -> Unit = {},
     private val onDeleteClick: (BatchHistoryItem) -> Unit = {}
 ) : RecyclerView.Adapter<BatchHistoryAdapter.ViewHolder>() {
 
@@ -86,6 +89,9 @@ class BatchHistoryAdapter(
             item.enhancedMetrics.accuracy * 100
         )
         holder.txtDetails.text = details
+
+        // Item click shows historical metrics details
+        holder.itemView.setOnClickListener { onItemClick(item) }
 
         // Handle individual item deletion
         holder.btnDelete?.setOnClickListener { onDeleteClick(item) }
