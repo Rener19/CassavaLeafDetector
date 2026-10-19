@@ -327,4 +327,26 @@ class ExampleUnitTest {
         assertEquals(1.0, metrics.macroF1, 0.0001)
         assertEquals(1.0, metrics.mcc, 0.0001)
     }
+
+    @Test
+    fun testActiveClassesMacroMetricsPartialBatchPredictingUntestedClass() {
+        // Scenario: 2 classes tested (CBB = 0, Healthy = 4), but model predicts CMD = 3 on image 2
+        // Ground truths: [0, 4], Predictions: [0, 3]
+        val predictions = listOf(0, 3)
+        val groundTruths = listOf(0, 4)
+        val metrics = MainActivity.calculateMetrics(predictions, groundTruths, 5)
+
+        // Tested classes: 0 and 4 (K=2)
+        // Image 1: Truth=0, Pred=0 -> TP_0=1, TN_4=1
+        // Image 2: Truth=4, Pred=3 -> FN_4=1, TN_0=1
+        // Class 0: TP=1, FP=0, FN=0, TN=1 -> Prec=1.0, Rec=1.0, TNR=1.0, F1=1.0
+        // Class 4: TP=0, FP=0, FN=1, TN=1 -> Prec=0.0, Rec=0.0, TNR=1.0, F1=0.0
+        // Macro (K=2): Prec=(1+0)/2 = 0.50, Rec=(1+0)/2 = 0.50, TNR=(1+1)/2 = 1.0, Acc=0.50
+        assertEquals(0.50, metrics.accuracy, 0.0001)
+        assertEquals(0.50, metrics.precision, 0.0001)
+        assertEquals(0.50, metrics.recall, 0.0001)
+        assertEquals(0.50, metrics.tpr, 0.0001)
+        assertEquals(1.00, metrics.tnr, 0.0001)
+        assertEquals(0.50, metrics.f1Score, 0.0001)
+    }
 }

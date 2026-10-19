@@ -148,6 +148,9 @@ class MainActivity : AppCompatActivity() {
     private var seekBatchThreshold: SeekBar? = null
     private var txtBatchThresholdValue: TextView? = null
     private var batchConfidenceThreshold: Float = 0.60f
+    private var seekSingleThreshold: SeekBar? = null
+    private var txtSingleThresholdValue: TextView? = null
+    private var singleConfidenceThreshold: Float = 0.60f
 
     // =========================================================================
     // Activity Result Launchers
@@ -293,6 +296,8 @@ class MainActivity : AppCompatActivity() {
         btnClearBatchHistory = findViewById(R.id.btn_clear_batch_history)
         seekBatchThreshold = findViewById(R.id.seek_batch_threshold)
         txtBatchThresholdValue = findViewById(R.id.txt_batch_threshold_value)
+        seekSingleThreshold = findViewById(R.id.seek_single_threshold)
+        txtSingleThresholdValue = findViewById(R.id.txt_single_threshold_value)
 
         // Model status badge
         findViewById<TextView>(R.id.txt_model_badge)?.text =
@@ -390,6 +395,16 @@ class MainActivity : AppCompatActivity() {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 batchConfidenceThreshold = progress / 100.0f
                 txtBatchThresholdValue?.text = "$progress%"
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        })
+
+        seekSingleThreshold?.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                singleConfidenceThreshold = progress / 100.0f
+                txtSingleThresholdValue?.text = "$progress%"
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar?) {}
@@ -544,15 +559,16 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        // Selective Classification: Rejection threshold check (60%)
+        // Selective Classification: Rejection threshold check (user-configurable, default 60%)
         // Only prompt for fresh scans (saveToHistory == true); browsing historical records opens directly.
-        if (saveToHistory && result.enhancedResult.confidence < CassavaClassifier.CONFIDENCE_THRESHOLD) {
+        if (saveToHistory && result.enhancedResult.confidence < singleConfidenceThreshold) {
             cardResult.visibility = View.GONE
             val confPercent = (result.enhancedResult.confidence * 100).toInt()
+            val thresholdPercent = (singleConfidenceThreshold * 100).toInt()
             AlertDialog.Builder(this)
                 .setTitle("⚠️ Low Confidence Prediction ($confPercent%)")
                 .setMessage(
-                    "The model is uncertain about this leaf image (Confidence is below the 60% diagnostic threshold).\n\n" +
+                    "The model is uncertain about this leaf image (Confidence is below your $thresholdPercent% diagnostic threshold).\n\n" +
                     "This usually occurs when the photo is blurry, poorly lit, or contains background clutter.\n\n" +
                     "Would you like to take another photo or proceed anyway?"
                 )
@@ -959,7 +975,7 @@ class MainActivity : AppCompatActivity() {
             val enhancedMetrics = calculateMetrics(enhancedPredictions, groundTruths, 5)
             val currentThreshold = batchConfidenceThreshold
 
-            val activeClassIndices = (groundTruths + basePredictions + enhancedPredictions).distinct().filter { it in 0 until 5 }.sorted()
+            val activeClassIndices = groundTruths.distinct().filter { it in 0 until 5 }.sorted()
             val activeClassNames = activeClassIndices.map { index ->
                 when (index) {
                     0 -> "CBB"
@@ -1055,8 +1071,8 @@ class MainActivity : AppCompatActivity() {
 
             val accuracy = correct.toDouble() / predictions.size
 
-            // Identify active classes present in ground truth or predicted by the model
-            val activeClasses = (groundTruths + predictions).distinct().filter { it in 0 until numClasses }.sorted()
+            // Identify active classes strictly from the uploaded ground truths
+            val activeClasses = groundTruths.distinct().filter { it in 0 until numClasses }.sorted()
             val activeK = activeClasses.size.coerceAtLeast(1)
 
             var macroPrecision = 0.0
