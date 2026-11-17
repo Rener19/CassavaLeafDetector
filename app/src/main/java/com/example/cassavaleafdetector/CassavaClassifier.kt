@@ -70,7 +70,8 @@ class CassavaClassifier(private val context: Context) : AutoCloseable {
         const val INPUT_IMAGE_WIDTH = 224
         const val INPUT_IMAGE_HEIGHT = 224
 
-        // Stage 1 Gatekeeper decision threshold (tau = 0.70 from training notebook benchmark)
+
+        // Stage 1 Gatekeeper decision threshold (calibrated tau = 0.70 from multi-foliage sweep)
         const val GATEKEEPER_THRESHOLD = 0.70f
 
         // Selective Classification rejection threshold (Geifman & El-Yaniv, 2017; Ramcharan et al., 2019)

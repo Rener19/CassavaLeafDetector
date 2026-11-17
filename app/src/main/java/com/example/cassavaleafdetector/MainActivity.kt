@@ -5,12 +5,16 @@ import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.media.ExifInterface
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import android.widget.Button
 import android.widget.ImageButton
 import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.SeekBar
 import android.widget.TextView
@@ -26,10 +30,14 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updatePadding
 import androidx.core.widget.NestedScrollView
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomnavigation.BottomNavigationView
+import com.google.android.material.button.MaterialButtonToggleGroup
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -148,6 +156,9 @@ class MainActivity : AppCompatActivity() {
     private var seekBatchThreshold: SeekBar? = null
     private var txtBatchThresholdValue: TextView? = null
     private var batchConfidenceThreshold: Float = 0.60f
+    private var isIndependentMode: Boolean = false
+    private var toggleBatchMode: MaterialButtonToggleGroup? = null
+    private var txtBatchModeDesc: TextView? = null
     private var seekSingleThreshold: SeekBar? = null
     private var txtSingleThresholdValue: TextView? = null
     private var singleConfidenceThreshold: Float = 0.60f
@@ -164,19 +175,25 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let {
-            try {
-                val inputStream = contentResolver.openInputStream(it)
-                val bitmap = BitmapFactory.decodeStream(inputStream)
-                inputStream?.close()
-                if (bitmap != null) {
-                    val localFilePath = saveBitmapToCache(bitmap)
-                    processDiagnosis(bitmap, localFilePath)
-                } else {
-                    Toast.makeText(this, "Failed to load image", Toast.LENGTH_SHORT).show()
+            cameraExecutor.execute {
+                try {
+                    val bitmap = decodeAndCorrectOrientation(it)
+                    if (bitmap != null) {
+                        val localFilePath = saveBitmapToCache(bitmap)
+                        runOnUiThread {
+                            processDiagnosis(bitmap, localFilePath)
+                        }
+                    } else {
+                        runOnUiThread {
+                            Toast.makeText(this@MainActivity, "Failed to load image", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    runOnUiThread {
+                        Toast.makeText(this@MainActivity, "Error: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+                    }
                 }
-            } catch (e: Exception) {
-                e.printStackTrace()
-                Toast.makeText(this, "Error: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -195,9 +212,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * Runtime camera permission request contract launcher.
-     */
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted: Boolean ->
@@ -217,6 +231,18 @@ class MainActivity : AppCompatActivity() {
         // Enforce Light Mode for consistent academic and clinical visual presentation
         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
         setContentView(R.layout.activity_main)
+
+        // Ensure top app bar does not overlap with status bar / camera cutouts (Android 15+ edge-to-edge)
+        val appBarLayout = findViewById<View>(R.id.app_bar_layout)
+        if (appBarLayout != null) {
+            ViewCompat.setOnApplyWindowInsetsListener(appBarLayout) { view, insets ->
+                val statusBarInsets = insets.getInsets(
+                    WindowInsetsCompat.Type.statusBars() or WindowInsetsCompat.Type.displayCutout()
+                )
+                view.updatePadding(top = statusBarInsets.top)
+                insets
+            }
+        }
 
         classifier = CassavaClassifier(this)
         cameraExecutor = Executors.newSingleThreadExecutor()
@@ -296,6 +322,8 @@ class MainActivity : AppCompatActivity() {
         btnClearBatchHistory = findViewById(R.id.btn_clear_batch_history)
         seekBatchThreshold = findViewById(R.id.seek_batch_threshold)
         txtBatchThresholdValue = findViewById(R.id.txt_batch_threshold_value)
+        toggleBatchMode = findViewById(R.id.toggle_batch_mode)
+        txtBatchModeDesc = findViewById(R.id.txt_batch_mode_desc)
         seekSingleThreshold = findViewById(R.id.seek_single_threshold)
         txtSingleThresholdValue = findViewById(R.id.txt_single_threshold_value)
 
@@ -388,8 +416,31 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btn_upload_cmd)?.setOnClickListener { launchBatchUpload(3) }
         findViewById<Button>(R.id.btn_upload_healthy)?.setOnClickListener { launchBatchUpload(4) }
 
+        // Batch test class individual clear buttons
+        findViewById<Button>(R.id.btn_clear_cbb)?.setOnClickListener { clearBatchClass(0, "CBB") }
+        findViewById<Button>(R.id.btn_clear_cbsd)?.setOnClickListener { clearBatchClass(1, "CBSD") }
+        findViewById<Button>(R.id.btn_clear_cgm)?.setOnClickListener { clearBatchClass(2, "CGM") }
+        findViewById<Button>(R.id.btn_clear_cmd)?.setOnClickListener { clearBatchClass(3, "CMD") }
+        findViewById<Button>(R.id.btn_clear_healthy)?.setOnClickListener { clearBatchClass(4, "Healthy") }
+        findViewById<Button>(R.id.btn_clear_all_batch_inputs)?.setOnClickListener { clearAllBatchInputs() }
+
         btnRunBatchTest?.setOnClickListener { runBatchTest() }
         btnClearBatchHistory?.setOnClickListener { clearBatchHistory() }
+
+        toggleBatchMode?.addOnButtonCheckedListener { _, checkedId, isChecked ->
+            if (isChecked) {
+                when (checkedId) {
+                    R.id.btn_mode_paired -> {
+                        isIndependentMode = false
+                        txtBatchModeDesc?.text = "Mode 1 (Paired): Both models evaluated on the same image subset accepted by the Enhanced model."
+                    }
+                    R.id.btn_mode_independent -> {
+                        isIndependentMode = true
+                        txtBatchModeDesc?.text = "Mode 2 (Independent): Models evaluated independently on images exceeding their own threshold. Reports coverage metrics."
+                    }
+                }
+            }
+        }
 
         seekBatchThreshold?.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
@@ -489,9 +540,13 @@ class MainActivity : AppCompatActivity() {
                 override fun onImageSaved(output: ImageCapture.OutputFileResults) {
                     btnCapture.isEnabled = true
                     closeCameraContainer()
-                    val bitmap = BitmapFactory.decodeFile(photoFile.absolutePath)
-                    if (bitmap != null) {
-                        processDiagnosis(bitmap, photoFile.absolutePath)
+                    cameraExecutor.execute {
+                        val bitmap = decodeAndCorrectOrientation(photoFile)
+                        if (bitmap != null) {
+                            runOnUiThread {
+                                processDiagnosis(bitmap, photoFile.absolutePath)
+                            }
+                        }
                     }
                 }
             }
@@ -510,30 +565,34 @@ class MainActivity : AppCompatActivity() {
      */
     private fun processDiagnosis(bitmap: Bitmap, imagePath: String, saveToHistory: Boolean = true) {
         if (saveToHistory) {
-            val gatekeeperResult = classifier.checkGatekeeper(bitmap)
-            if (!gatekeeperResult.isCassava) {
-                cardResult.visibility = View.GONE
-                val confPercent = (gatekeeperResult.probability * 100).toInt()
-                AlertDialog.Builder(this)
-                    .setTitle("⚠️ Not a Cassava Leaf")
-                    .setMessage(
-                        "It seems like this image is not a cassava leaf ($confPercent% Cassava confidence).\n\n" +
-                        "Would you like to retake the photo or continue anyway?"
-                    )
-                    .setPositiveButton("Retake Photo") { _, _ ->
-                        openCameraContainer()
+            cameraExecutor.execute {
+                val gatekeeperResult = classifier.checkGatekeeper(bitmap)
+                runOnUiThread {
+                    if (!gatekeeperResult.isCassava) {
+                        cardResult.visibility = View.GONE
+                        val confPercent = (gatekeeperResult.probability * 100).toInt()
+                        AlertDialog.Builder(this@MainActivity)
+                            .setTitle("⚠️ Not a Cassava Leaf")
+                            .setMessage(
+                                "It seems like this image is not a cassava leaf ($confPercent% Cassava confidence).\n\n" +
+                                "Would you like to retake the photo or continue anyway?"
+                            )
+                            .setPositiveButton("Retake Photo") { _, _ ->
+                                openCameraContainer()
+                            }
+                            .setNeutralButton("Upload Another") { _, _ ->
+                                closeCameraContainer()
+                                galleryLauncher.launch("image/*")
+                            }
+                            .setNegativeButton("Continue") { _, _ ->
+                                runClassificationPipeline(bitmap, imagePath, saveToHistory, gatekeeperResult)
+                            }
+                            .show()
+                        return@runOnUiThread
                     }
-                    .setNeutralButton("Upload Another") { _, _ ->
-                        closeCameraContainer()
-                        galleryLauncher.launch("image/*")
-                    }
-                    .setNegativeButton("Continue") { _, _ ->
-                        runClassificationPipeline(bitmap, imagePath, saveToHistory, gatekeeperResult)
-                    }
-                    .show()
-                return
+                    runClassificationPipeline(bitmap, imagePath, saveToHistory, gatekeeperResult)
+                }
             }
-            runClassificationPipeline(bitmap, imagePath, saveToHistory, gatekeeperResult)
         } else {
             // Browsing historical records directly
             runClassificationPipeline(bitmap, imagePath, saveToHistory = false, gatekeeperResult = null)
@@ -551,42 +610,46 @@ class MainActivity : AppCompatActivity() {
         saveToHistory: Boolean,
         gatekeeperResult: CassavaClassifier.GatekeeperResult? = null
     ) {
-        val result = try {
-            classifier.classifyImage(bitmap, gatekeeperResult)
-        } catch (e: Exception) {
-            e.printStackTrace()
-            Toast.makeText(this, "Model Execution Error: ${e.message}", Toast.LENGTH_LONG).show()
-            return
-        }
+        cameraExecutor.execute {
+            try {
+                val result = classifier.classifyImage(bitmap, gatekeeperResult)
+                runOnUiThread {
+                    // Selective Classification: Rejection threshold check (user-configurable, default 60%)
+                    // Only prompt for fresh scans (saveToHistory == true); browsing historical records opens directly.
+                    if (saveToHistory && result.enhancedResult.confidence < singleConfidenceThreshold) {
+                        cardResult.visibility = View.GONE
+                        val confPercent = (result.enhancedResult.confidence * 100).toInt()
+                        val thresholdPercent = (singleConfidenceThreshold * 100).toInt()
+                        AlertDialog.Builder(this@MainActivity)
+                            .setTitle("⚠️ Low Confidence Prediction ($confPercent%)")
+                            .setMessage(
+                                "The model is uncertain about this leaf image (Confidence is below your $thresholdPercent% diagnostic threshold).\n\n" +
+                                "This usually occurs when the photo is blurry, poorly lit, or contains background clutter.\n\n" +
+                                "Would you like to take another photo or proceed anyway?"
+                            )
+                            .setPositiveButton("Retake Photo") { _, _ ->
+                                openCameraContainer()
+                            }
+                            .setNeutralButton("Upload Another") { _, _ ->
+                                closeCameraContainer()
+                                galleryLauncher.launch("image/*")
+                            }
+                            .setNegativeButton("View Anyway") { _, _ ->
+                                displayDiagnosisResult(result, bitmap, imagePath, saveToHistory)
+                            }
+                            .show()
+                        return@runOnUiThread
+                    }
 
-        // Selective Classification: Rejection threshold check (user-configurable, default 60%)
-        // Only prompt for fresh scans (saveToHistory == true); browsing historical records opens directly.
-        if (saveToHistory && result.enhancedResult.confidence < singleConfidenceThreshold) {
-            cardResult.visibility = View.GONE
-            val confPercent = (result.enhancedResult.confidence * 100).toInt()
-            val thresholdPercent = (singleConfidenceThreshold * 100).toInt()
-            AlertDialog.Builder(this)
-                .setTitle("⚠️ Low Confidence Prediction ($confPercent%)")
-                .setMessage(
-                    "The model is uncertain about this leaf image (Confidence is below your $thresholdPercent% diagnostic threshold).\n\n" +
-                    "This usually occurs when the photo is blurry, poorly lit, or contains background clutter.\n\n" +
-                    "Would you like to take another photo or proceed anyway?"
-                )
-                .setPositiveButton("Retake Photo") { _, _ ->
-                    openCameraContainer()
-                }
-                .setNeutralButton("Upload Another") { _, _ ->
-                    closeCameraContainer()
-                    galleryLauncher.launch("image/*")
-                }
-                .setNegativeButton("View Anyway") { _, _ ->
                     displayDiagnosisResult(result, bitmap, imagePath, saveToHistory)
                 }
-                .show()
-            return
+            } catch (e: Exception) {
+                e.printStackTrace()
+                runOnUiThread {
+                    Toast.makeText(this@MainActivity, "Model Execution Error: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
         }
-
-        displayDiagnosisResult(result, bitmap, imagePath, saveToHistory)
     }
 
     private fun displayDiagnosisResult(
@@ -598,12 +661,17 @@ class MainActivity : AppCompatActivity() {
         // Make result container visible
         cardResult.visibility = View.VISIBLE
 
-        // 1. Display Original and Enhanced images side-by-side
-        imgScanned.setImageBitmap(bitmap)
+        // 1. Display Original and Enhanced images side-by-side (standardized to 224x224 for an apples-to-apples model comparison)
+        val rawModelInputBitmap = if (bitmap.width == 224 && bitmap.height == 224) {
+            bitmap
+        } else {
+            Bitmap.createScaledBitmap(bitmap, 224, 224, true)
+        }
+        imgScanned.setImageBitmap(rawModelInputBitmap)
         if (result.enhancedBitmap != null) {
             imgEnhanced?.setImageBitmap(result.enhancedBitmap)
         } else {
-            imgEnhanced?.setImageBitmap(bitmap)
+            imgEnhanced?.setImageBitmap(rawModelInputBitmap)
         }
 
         // 2. Populate Enhanced Model outputs
@@ -712,6 +780,61 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
+     * Decodes an image file and corrects any EXIF rotation (e.g. portrait camera capture).
+     */
+    private fun decodeAndCorrectOrientation(file: File): Bitmap? {
+        val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return null
+        return try {
+            val exif = ExifInterface(file.absolutePath)
+            val orientation = exif.getAttributeInt(
+                ExifInterface.TAG_ORIENTATION,
+                ExifInterface.ORIENTATION_NORMAL
+            )
+            rotateBitmapIfNeeded(bitmap, orientation)
+        } catch (e: Exception) {
+            bitmap
+        }
+    }
+
+    /**
+     * Decodes an image content URI and corrects any EXIF rotation.
+     */
+    private fun decodeAndCorrectOrientation(uri: Uri): Bitmap? {
+        val inputStream = contentResolver.openInputStream(uri) ?: return null
+        val bitmap = BitmapFactory.decodeStream(inputStream)
+        inputStream.close()
+        if (bitmap == null) return null
+
+        return try {
+            val exifStream = contentResolver.openInputStream(uri) ?: return bitmap
+            val exif = ExifInterface(exifStream)
+            val orientation = exif.getAttributeInt(
+                ExifInterface.TAG_ORIENTATION,
+                ExifInterface.ORIENTATION_NORMAL
+            )
+            exifStream.close()
+            rotateBitmapIfNeeded(bitmap, orientation)
+        } catch (e: Exception) {
+            bitmap
+        }
+    }
+
+    private fun rotateBitmapIfNeeded(bitmap: Bitmap, orientation: Int): Bitmap {
+        val matrix = Matrix()
+        when (orientation) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+            ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+            ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+            else -> return bitmap
+        }
+        val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+        if (rotated != bitmap) {
+            bitmap.recycle()
+        }
+        return rotated
+    }
+
+    /**
      * Caches gallery bitmap to disk so it can be reloaded in history without holding in RAM.
      */
     private fun saveBitmapToCache(bitmap: Bitmap): String {
@@ -749,107 +872,70 @@ class MainActivity : AppCompatActivity() {
 
     private fun loadSavedHistory() {
         val prefs = getSharedPreferences("cassava_history", MODE_PRIVATE)
-        val jsonStr = prefs.getString("history_json", null) ?: return
+        val jsonStr = prefs.getString("history_json", null)
         historyList.clear()
-        try {
-            val array = JSONArray(jsonStr)
-            for (i in 0 until array.length()) {
-                val obj = array.getJSONObject(i)
-                historyList.add(
-                    HistoryItem(
-                        id = obj.getString("id"),
-                        label = obj.getString("label"),
-                        confidence = obj.getDouble("confidence").toFloat(),
-                        date = obj.getString("date"),
-                        imagePath = obj.getString("imagePath"),
-                        index = obj.getInt("index")
+        if (jsonStr != null) {
+            try {
+                val array = JSONArray(jsonStr)
+                for (i in 0 until array.length()) {
+                    val obj = array.getJSONObject(i)
+                    historyList.add(
+                        HistoryItem(
+                            id = obj.getString("id"),
+                            label = obj.getString("label"),
+                            confidence = obj.getDouble("confidence").toFloat(),
+                            date = obj.getString("date"),
+                            imagePath = obj.getString("imagePath"),
+                            index = obj.getInt("index")
+                        )
                     )
-                )
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
         }
         updateHistoryUI("all")
     }
 
-    private fun toggleHealthy(){
+    private fun toggleHealthy() {
         updateHistoryUI("healthy")
     }
 
-    private fun toggleUnhealthy(){
-
+    private fun toggleUnhealthy() {
         updateHistoryUI("unhealthy")
     }
 
-    @SuppressLint("SuspiciousIndentation")
     private fun updateHistoryUI(toggle: String) {
+        historyListDisplay.clear()
+        when (toggle) {
+            "healthy" -> historyListDisplay.addAll(historyList.filter { it.index == 4 || it.label.equals("Healthy", ignoreCase = true) })
+            "unhealthy" -> historyListDisplay.addAll(historyList.filter { it.index != 4 && !it.label.equals("Healthy", ignoreCase = true) })
+            else -> historyListDisplay.addAll(historyList)
+        }
 
-
+        if (historyListDisplay.isEmpty()) {
+            txtNoHistory.visibility = View.VISIBLE
+            recyclerHistory.visibility = View.GONE
+            if (historyList.isEmpty()) {
+                btnClearHistory.visibility = View.GONE
+                btnHealthyToggle?.visibility = View.GONE
+                btnUnhealthyToggle?.visibility = View.GONE
+                btnAllToggle?.visibility = View.GONE
+            } else {
+                btnClearHistory.visibility = View.VISIBLE
+                btnHealthyToggle?.visibility = View.VISIBLE
+                btnUnhealthyToggle?.visibility = View.VISIBLE
+                btnAllToggle?.visibility = View.VISIBLE
+            }
+        } else {
             txtNoHistory.visibility = View.GONE
             recyclerHistory.visibility = View.VISIBLE
             btnClearHistory.visibility = View.VISIBLE
             btnHealthyToggle?.visibility = View.VISIBLE
             btnUnhealthyToggle?.visibility = View.VISIBLE
             btnAllToggle?.visibility = View.VISIBLE
-            val prefs = getSharedPreferences("cassava_history", MODE_PRIVATE)
-            val jsonStr = prefs.getString("history_json", null) ?: return
-            historyListDisplay.clear()
-            try {
-                val array = JSONArray(jsonStr)
-                if(toggle == "all"){
-                    for (i in 0 until array.length()) {
-                        val obj = array.getJSONObject(i)
-
-                            historyListDisplay.add(
-                                HistoryItem(
-                                    id = obj.getString("id"),
-                                    label = obj.getString("label"),
-                                    confidence = obj.getDouble("confidence").toFloat(),
-                                    date = obj.getString("date"),
-                                    imagePath = obj.getString("imagePath"),
-                                    index = obj.getInt("index")
-                                )
-                            )
-                    }
-                } else if(toggle == "healthy"){
-                    for (i in 0 until array.length()) {
-                        val obj = array.getJSONObject(i)
-                        if (obj.getString("label") == "Healthy" ) {
-                            historyListDisplay.add(
-                                HistoryItem(
-                                    id = obj.getString("id"),
-                                    label = obj.getString("label"),
-                                    confidence = obj.getDouble("confidence").toFloat(),
-                                    date = obj.getString("date"),
-                                    imagePath = obj.getString("imagePath"),
-                                    index = obj.getInt("index")
-                                )
-                            )
-                        }
-                    }
-                } else if(toggle == "unhealthy"){
-                    for (i in 0 until array.length()) {
-                        val obj = array.getJSONObject(i)
-                        if (obj.getString("label") != "Healthy" ) {
-                            historyListDisplay.add(
-                                HistoryItem(
-                                    id = obj.getString("id"),
-                                    label = obj.getString("label"),
-                                    confidence = obj.getDouble("confidence").toFloat(),
-                                    date = obj.getString("date"),
-                                    imagePath = obj.getString("imagePath"),
-                                    index = obj.getInt("index")
-                                )
-                            )
-                        }
-                    }
-                }
-
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-            historyAdapter.updateData(historyListDisplay)
-
+        }
+        historyAdapter.updateData(historyListDisplay)
     }
 
     private fun deleteHistoryItem(item: HistoryItem) {
@@ -891,6 +977,35 @@ class MainActivity : AppCompatActivity() {
         batchGalleryLauncher.launch("image/*")
     }
 
+    private fun clearBatchClass(classIndex: Int, className: String) {
+        val count = batchImages[classIndex]?.size ?: 0
+        batchImages[classIndex]?.clear()
+        updateBatchCounts()
+        if (count > 0) {
+            Toast.makeText(this, "Cleared $count $className image(s)", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(this, "$className input is already empty", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun clearAllBatchInputs() {
+        val totalCount = batchImages.values.sumOf { it.size }
+        if (totalCount == 0) {
+            Toast.makeText(this, "Batch inputs are already empty", Toast.LENGTH_SHORT).show()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Clear All Uploads")
+            .setMessage("Are you sure you want to clear all $totalCount uploaded batch image(s)?")
+            .setPositiveButton("Clear All") { _, _ ->
+                batchImages.clear()
+                updateBatchCounts()
+                Toast.makeText(this, "Cleared all $totalCount uploaded image(s)", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     private fun updateBatchCounts() {
         findViewById<TextView>(R.id.txt_count_cbb)?.text = "${batchImages[0]?.size ?: 0} images selected"
         findViewById<TextView>(R.id.txt_count_cbsd)?.text = "${batchImages[1]?.size ?: 0} images selected"
@@ -899,7 +1014,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.txt_count_healthy)?.text = "${batchImages[4]?.size ?: 0} images selected"
     }
 
-    /**
+/**
      * Executes batch model evaluation across all uploaded images in background thread.
      */
     private fun runBatchTest() {
@@ -913,20 +1028,25 @@ class MainActivity : AppCompatActivity() {
         progressBatch?.visibility = View.VISIBLE
         layoutBatchResults?.visibility = View.GONE
 
+        val runIndependent = isIndependentMode
+
         cameraExecutor.execute {
             val basePredictions = mutableListOf<Int>()
+            val baseGroundTruths = mutableListOf<Int>()
             val enhancedPredictions = mutableListOf<Int>()
-            val groundTruths = mutableListOf<Int>()
+            val enhancedGroundTruths = mutableListOf<Int>()
+            val pairedGroundTruths = mutableListOf<Int>()
+
             var processedCount = 0
             var skippedNonCassava = 0
-            var skippedLowConfidence = 0
+            var pairedSkippedLowConfidence = 0
+            var baseSkippedLowConfidence = 0
+            var enhancedSkippedLowConfidence = 0
 
             for ((classIndex, uris) in batchImages) {
                 for (uri in uris) {
                     try {
-                        val inputStream = contentResolver.openInputStream(uri)
-                        val bitmap = BitmapFactory.decodeStream(inputStream)
-                        inputStream?.close()
+                        val bitmap = decodeAndCorrectOrientation(uri)
                         if (bitmap != null) {
                             processedCount++
                             // Stage 1: Gatekeeper binary filter (tau = 0.70)
@@ -938,14 +1058,32 @@ class MainActivity : AppCompatActivity() {
 
                             // Stage 2: Disease classification
                             val result = classifier.classifyImage(bitmap, gatekeeperResult)
-                            // Selective Classification: Exclude predictions falling below user-configured confidence threshold
-                            if (result.enhancedResult.confidence < batchConfidenceThreshold) {
-                                skippedLowConfidence++
-                                continue
+
+                            if (!runIndependent) {
+                                // Mode 1: Paired evaluation (both models evaluated on images accepted by Enhanced model)
+                                if (result.enhancedResult.confidence < batchConfidenceThreshold) {
+                                    pairedSkippedLowConfidence++
+                                    continue
+                                }
+                                basePredictions.add(result.baseResult.index)
+                                enhancedPredictions.add(result.enhancedResult.index)
+                                pairedGroundTruths.add(classIndex)
+                            } else {
+                                // Mode 2: Independent evaluation (each model evaluated on its own accepted images)
+                                if (result.baseResult.confidence >= batchConfidenceThreshold) {
+                                    basePredictions.add(result.baseResult.index)
+                                    baseGroundTruths.add(classIndex)
+                                } else {
+                                    baseSkippedLowConfidence++
+                                }
+
+                                if (result.enhancedResult.confidence >= batchConfidenceThreshold) {
+                                    enhancedPredictions.add(result.enhancedResult.index)
+                                    enhancedGroundTruths.add(classIndex)
+                                } else {
+                                    enhancedSkippedLowConfidence++
+                                }
                             }
-                            basePredictions.add(result.baseResult.index)
-                            enhancedPredictions.add(result.enhancedResult.index)
-                            groundTruths.add(classIndex)
                         }
                     } catch (e: Exception) {
                         e.printStackTrace()
@@ -954,62 +1092,117 @@ class MainActivity : AppCompatActivity() {
             }
 
             val thresholdPercent = (batchConfidenceThreshold * 100).toInt()
-            if (enhancedPredictions.isEmpty()) {
+
+            if (!runIndependent) {
+                if (enhancedPredictions.isEmpty()) {
+                    runOnUiThread {
+                        Toast.makeText(
+                            this,
+                            "All $totalImages image(s) were excluded from evaluation (Non-cassava: $skippedNonCassava, Low-confidence < $thresholdPercent%: $pairedSkippedLowConfidence).",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        btnRunBatchTest?.isEnabled = true
+                        progressBatch?.visibility = View.GONE
+                    }
+                    return@execute
+                }
+
+                val evaluatedCount = enhancedPredictions.size
+                val coveragePct = (evaluatedCount.toDouble() / totalImages.coerceAtLeast(1)) * 100.0
+                val baseMetrics = calculateMetrics(basePredictions, pairedGroundTruths, 5, evaluatedCount, coveragePct)
+                val enhancedMetrics = calculateMetrics(enhancedPredictions, pairedGroundTruths, 5, evaluatedCount, coveragePct)
+                val currentThreshold = batchConfidenceThreshold
+
+                val activeClassIndices = pairedGroundTruths.distinct().filter { it in 0 until 5 }.sorted()
+                val activeClassNames = activeClassIndices.map { index ->
+                    when (index) {
+                        0 -> "CBB"
+                        1 -> "CBSD"
+                        2 -> "CGM"
+                        3 -> "CMD"
+                        4 -> "Healthy"
+                        else -> "Class $index"
+                    }
+                }
+                val activeInfo = if (activeClassIndices.size == 5) {
+                    "All 5 Classes (CBB, CBSD, CGM, CMD, Healthy)"
+                } else {
+                    "${activeClassIndices.size}/5 Classes (${activeClassNames.joinToString(", ")})"
+                }
+
                 runOnUiThread {
-                    Toast.makeText(
-                        this,
-                        "All $totalImages image(s) were excluded from evaluation (Non-cassava: $skippedNonCassava, Low-confidence < $thresholdPercent%: $skippedLowConfidence).",
-                        Toast.LENGTH_LONG
-                    ).show()
+                    displayBatchResults(
+                        base = baseMetrics,
+                        enhanced = enhancedMetrics,
+                        total = totalImages,
+                        evaluated = evaluatedCount,
+                        skippedNonCassava = skippedNonCassava,
+                        skippedLowConfidence = pairedSkippedLowConfidence,
+                        confidenceThreshold = currentThreshold,
+                        activeClassesInfo = activeInfo
+                    )
+                    saveBatchHistory(totalImages, baseMetrics, enhancedMetrics, activeInfo, "Mode 1 (Paired)")
                     btnRunBatchTest?.isEnabled = true
                     progressBatch?.visibility = View.GONE
-                    batchImages.clear()
-                    updateBatchCounts()
+                    Toast.makeText(this@MainActivity, "Batch test finished ($evaluatedCount/$totalImages evaluated)", Toast.LENGTH_SHORT).show()
                 }
-                return@execute
-            }
-
-            // Compute rigorous academic metrics across active disease classes
-            val evaluatedCount = enhancedPredictions.size
-            val baseMetrics = calculateMetrics(basePredictions, groundTruths, 5)
-            val enhancedMetrics = calculateMetrics(enhancedPredictions, groundTruths, 5)
-            val currentThreshold = batchConfidenceThreshold
-
-            val activeClassIndices = groundTruths.distinct().filter { it in 0 until 5 }.sorted()
-            val activeClassNames = activeClassIndices.map { index ->
-                when (index) {
-                    0 -> "CBB"
-                    1 -> "CBSD"
-                    2 -> "CGM"
-                    3 -> "CMD"
-                    4 -> "Healthy"
-                    else -> "Class $index"
-                }
-            }
-            val activeInfo = if (activeClassIndices.size == 5) {
-                "All 5 Classes (CBB, CBSD, CGM, CMD, Healthy)"
             } else {
-                "${activeClassIndices.size}/5 Classes (${activeClassNames.joinToString(", ")})"
-            }
+                // Mode 2: Independent
+                if (basePredictions.isEmpty() && enhancedPredictions.isEmpty()) {
+                    runOnUiThread {
+                        Toast.makeText(
+                            this,
+                            "All $totalImages image(s) were excluded from both models (Non-cassava: $skippedNonCassava, Base low-conf: $baseSkippedLowConfidence, Enh low-conf: $enhancedSkippedLowConfidence).",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        btnRunBatchTest?.isEnabled = true
+                        progressBatch?.visibility = View.GONE
+                    }
+                    return@execute
+                }
 
-            runOnUiThread {
-                displayBatchResults(
-                    baseMetrics,
-                    enhancedMetrics,
-                    totalImages,
-                    evaluatedCount,
-                    skippedNonCassava,
-                    skippedLowConfidence,
-                    currentThreshold,
-                    activeInfo
-                )
-                saveBatchHistory(evaluatedCount, baseMetrics, enhancedMetrics, activeInfo)
-                btnRunBatchTest?.isEnabled = true
-                progressBatch?.visibility = View.GONE
+                val baseCoverageCount = basePredictions.size
+                val baseCoveragePercent = (baseCoverageCount.toDouble() / totalImages.coerceAtLeast(1)) * 100.0
+                val enhancedCoverageCount = enhancedPredictions.size
+                val enhancedCoveragePercent = (enhancedCoverageCount.toDouble() / totalImages.coerceAtLeast(1)) * 100.0
 
-                // Reset batch inputs
-                batchImages.clear()
-                updateBatchCounts()
+                val baseMetrics = calculateMetrics(basePredictions, baseGroundTruths, 5, baseCoverageCount, baseCoveragePercent)
+                val enhancedMetrics = calculateMetrics(enhancedPredictions, enhancedGroundTruths, 5, enhancedCoverageCount, enhancedCoveragePercent)
+                val currentThreshold = batchConfidenceThreshold
+
+                val allGroundTruths = (baseGroundTruths + enhancedGroundTruths).distinct().filter { it in 0 until 5 }.sorted()
+                val activeClassNames = allGroundTruths.map { index ->
+                    when (index) {
+                        0 -> "CBB"
+                        1 -> "CBSD"
+                        2 -> "CGM"
+                        3 -> "CMD"
+                        4 -> "Healthy"
+                        else -> "Class $index"
+                    }
+                }
+                val activeInfo = if (allGroundTruths.size == 5) {
+                    "All 5 Classes (CBB, CBSD, CGM, CMD, Healthy)"
+                } else {
+                    "${allGroundTruths.size}/5 Classes (${activeClassNames.joinToString(", ")})"
+                }
+
+                runOnUiThread {
+                    displayBatchResultsIndependent(
+                        base = baseMetrics,
+                        enhanced = enhancedMetrics,
+                        total = totalImages,
+                        skippedNonCassava = skippedNonCassava,
+                        baseSkippedLowConf = baseSkippedLowConfidence,
+                        enhancedSkippedLowConf = enhancedSkippedLowConfidence,
+                        confidenceThreshold = currentThreshold,
+                        activeClassesInfo = activeInfo
+                    )
+                    saveBatchHistory(totalImages, baseMetrics, enhancedMetrics, activeInfo, "Mode 2 (Independent)")
+                    btnRunBatchTest?.isEnabled = true
+                    progressBatch?.visibility = View.GONE
+                    Toast.makeText(this@MainActivity, "Batch test finished ($totalImages images evaluated)", Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
@@ -1038,7 +1231,24 @@ class MainActivity : AppCompatActivity() {
          * This avoids artificial zero-division penalties on untested classes while properly
          * penalizing false alarms.
          */
-        internal fun calculateMetrics(predictions: List<Int>, groundTruths: List<Int>, numClasses: Int): Metrics {
+        internal fun calculateMetrics(
+            predictions: List<Int>,
+            groundTruths: List<Int>,
+            numClasses: Int = 5,
+            coverageCount: Int = predictions.size,
+            coveragePercent: Double = 100.0
+        ): Metrics {
+            // Build 5x5 multi-class confusion matrix (Rows = Actual Ground Truth, Columns = Predicted Class)
+            val cm = Array(numClasses) { IntArray(numClasses) }
+            for (i in predictions.indices) {
+                val p = predictions[i]
+                val t = groundTruths[i]
+                if (t in 0 until numClasses && p in 0 until numClasses) {
+                    cm[t][p]++
+                }
+            }
+            val matrixList = cm.map { it.toList() }
+
             if (predictions.isEmpty()) return Metrics(
                 accuracy = 0.0,
                 precision = 0.0,
@@ -1047,7 +1257,10 @@ class MainActivity : AppCompatActivity() {
                 tnr = 0.0,
                 f1Score = 0.0,
                 macroF1 = 0.0,
-                mcc = 0.0
+                mcc = 0.0,
+                confusionMatrix = matrixList,
+                coverageCount = coverageCount,
+                coveragePercent = coveragePercent
             )
 
             var correct = 0
@@ -1115,8 +1328,6 @@ class MainActivity : AppCompatActivity() {
             macroTnr /= activeK
             macroMcc /= activeK
 
-            // Note: Micro F1 in multi-class single-label is mathematically equal to Accuracy.
-            // True Positive Rate (Sensitivity) is identical to Recall.
             return Metrics(
                 accuracy = accuracy,
                 precision = macroPrecision,
@@ -1125,8 +1336,32 @@ class MainActivity : AppCompatActivity() {
                 tnr = macroTnr,
                 f1Score = accuracy,
                 macroF1 = macroF1,
-                mcc = macroMcc
+                mcc = macroMcc,
+                confusionMatrix = matrixList,
+                coverageCount = coverageCount,
+                coveragePercent = coveragePercent
             )
+        }
+
+        /**
+         * Formats a 5x5 confusion matrix into a clean, monospace-aligned ASCII table.
+         */
+        internal fun formatConfusionMatrix(matrix: List<List<Int>>): String {
+            if (matrix.isEmpty() || matrix.all { row -> row.all { it == 0 } }) return "  (No predictions evaluated)"
+            val colLabels = listOf("CBB", "CBS", "CGM", "CMD", "HLT")
+            val sb = StringBuilder()
+            sb.append("Pred ->   CBB   CBS   CGM   CMD   HLT\n")
+            sb.append("Truth -------------------------------\n")
+            for (r in 0 until 5) {
+                val rowLabel = colLabels.getOrElse(r) { "C$r" }.padEnd(5)
+                sb.append(rowLabel).append("  ")
+                for (c in 0 until 5) {
+                    val count = if (r < matrix.size && c < matrix[r].size) matrix[r][c] else 0
+                    sb.append(String.format(Locale.US, "%5d ", count))
+                }
+                if (r < 4) sb.append("\n")
+            }
+            return sb.toString()
         }
     }
 
@@ -1142,15 +1377,22 @@ class MainActivity : AppCompatActivity() {
     ) {
         layoutBatchResults?.visibility = View.VISIBLE
         val thresholdPercent = (confidenceThreshold * 100).toInt()
+        val covStr = "$evaluated / $total (${formatPercent(evaluated.toDouble() / total.coerceAtLeast(1))})"
+
         val resultText = """
+            ========================================
+            EVALUATION: Mode 1 (Paired Evaluation)
+            Same pool accepted by Enhanced Model
+            ========================================
             BATCH SUMMARY:
             • Total Images Uploaded: $total
-            • Evaluated (Pass Gatekeeper & ≥ $thresholdPercent% Conf.): $evaluated
+            • Evaluated Images: $covStr
             • Active Taxonomy Classes: $activeClassesInfo
             • Excluded (Not Cassava Leaf < 70%): $skippedNonCassava
             • Excluded (Low Confidence < $thresholdPercent%): $skippedLowConfidence
             
             BASE MODEL METRICS:
+            Coverage: $covStr
             Accuracy: ${formatPercent(base.accuracy)}
             Precision: ${formatPercent(base.precision)}
             Recall: ${formatPercent(base.recall)}
@@ -1159,8 +1401,9 @@ class MainActivity : AppCompatActivity() {
             F1 Score: ${formatPercent(base.f1Score)}
             Macro F1: ${formatPercent(base.macroF1)}
             MCC: ${formatDouble(base.mcc)}
-            
+
             ENHANCED MODEL METRICS:
+            Coverage: $covStr
             Accuracy: ${formatPercent(enhanced.accuracy)}
             Precision: ${formatPercent(enhanced.precision)}
             Recall: ${formatPercent(enhanced.recall)}
@@ -1174,6 +1417,60 @@ class MainActivity : AppCompatActivity() {
         txtBatchMetrics?.text = resultText
     }
 
+    private fun displayBatchResultsIndependent(
+        base: Metrics,
+        enhanced: Metrics,
+        total: Int,
+        skippedNonCassava: Int,
+        baseSkippedLowConf: Int,
+        enhancedSkippedLowConf: Int,
+        confidenceThreshold: Float,
+        activeClassesInfo: String
+    ) {
+        layoutBatchResults?.visibility = View.VISIBLE
+        val thresholdPercent = (confidenceThreshold * 100).toInt()
+        val baseCovStr = "${base.coverageCount} / $total (${formatPercent(base.coveragePercent / 100.0)})"
+        val enhCovStr = "${enhanced.coverageCount} / $total (${formatPercent(enhanced.coveragePercent / 100.0)})"
+
+        val resultText = """
+            ========================================
+            EVALUATION: Mode 2 (Independent)
+            Independent thresholding for each model
+            ========================================
+            BATCH SUMMARY:
+            • Total Images Uploaded: $total
+            • Excluded (Not Cassava Leaf < 70%): $skippedNonCassava
+            • Confidence Threshold: $thresholdPercent%
+            • Active Taxonomy Classes: $activeClassesInfo
+            
+            BASE MODEL EVALUATION:
+            • Coverage: $baseCovStr
+            • Excluded (Low Conf < $thresholdPercent%): $baseSkippedLowConf
+            • Accuracy: ${formatPercent(base.accuracy)}
+            • Precision: ${formatPercent(base.precision)}
+            • Recall: ${formatPercent(base.recall)}
+            • True Positive Rate: ${formatPercent(base.tpr)}
+            • True Negative Rate: ${formatPercent(base.tnr)}
+            • F1 Score: ${formatPercent(base.f1Score)}
+            • Macro F1: ${formatPercent(base.macroF1)}
+            • MCC: ${formatDouble(base.mcc)}
+
+            ENHANCED MODEL EVALUATION:
+            • Coverage: $enhCovStr
+            • Excluded (Low Conf < $thresholdPercent%): $enhancedSkippedLowConf
+            • Accuracy: ${formatPercent(enhanced.accuracy)}
+            • Precision: ${formatPercent(enhanced.precision)}
+            • Recall: ${formatPercent(enhanced.recall)}
+            • True Positive Rate: ${formatPercent(enhanced.tpr)}
+            • True Negative Rate: ${formatPercent(enhanced.tnr)}
+            • F1 Score: ${formatPercent(enhanced.f1Score)}
+            • Macro F1: ${formatPercent(enhanced.macroF1)}
+            • MCC: ${formatDouble(enhanced.mcc)}
+        """.trimIndent()
+
+        txtBatchMetrics?.text = resultText
+    }
+
     private fun formatPercent(value: Double): String = String.format(Locale.US, "%.1f%%", value * 100)
     private fun formatDouble(value: Double): String = String.format(Locale.US, "%.3f", value)
 
@@ -1181,7 +1478,13 @@ class MainActivity : AppCompatActivity() {
     // Batch-Test History Persistence
     // =========================================================================
 
-    private fun saveBatchHistory(totalImages: Int, baseMetrics: Metrics, enhancedMetrics: Metrics, activeClassesInfo: String = "") {
+    private fun saveBatchHistory(
+        totalImages: Int,
+        baseMetrics: Metrics,
+        enhancedMetrics: Metrics,
+        activeClassesInfo: String = "",
+        evaluationMode: String = "Mode 1 (Paired)"
+    ) {
         val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date())
         val item = BatchHistoryItem(
             id = UUID.randomUUID().toString(),
@@ -1189,7 +1492,8 @@ class MainActivity : AppCompatActivity() {
             totalImages = totalImages,
             baseMetrics = baseMetrics,
             enhancedMetrics = enhancedMetrics,
-            activeClassesInfo = activeClassesInfo
+            activeClassesInfo = activeClassesInfo,
+            evaluationMode = evaluationMode
         )
         batchHistoryList.add(0, item)
         saveBatchHistoryToSharedPrefs()
@@ -1205,6 +1509,7 @@ class MainActivity : AppCompatActivity() {
             obj.put("date", h.date)
             obj.put("totalImages", h.totalImages)
             obj.put("activeInfo", h.activeClassesInfo)
+            obj.put("evalMode", h.evaluationMode)
 
             val bObj = JSONObject()
             bObj.put("acc", h.baseMetrics.accuracy)
@@ -1215,6 +1520,17 @@ class MainActivity : AppCompatActivity() {
             bObj.put("tnr", h.baseMetrics.tnr)
             bObj.put("macroF1", h.baseMetrics.macroF1)
             bObj.put("mcc", h.baseMetrics.mcc)
+            bObj.put("covCount", h.baseMetrics.coverageCount)
+            bObj.put("covPct", h.baseMetrics.coveragePercent)
+            if (h.baseMetrics.confusionMatrix.isNotEmpty()) {
+                val cmArray = JSONArray()
+                for (row in h.baseMetrics.confusionMatrix) {
+                    val rowArray = JSONArray()
+                    for (cell in row) rowArray.put(cell)
+                    cmArray.put(rowArray)
+                }
+                bObj.put("cm", cmArray)
+            }
             obj.put("baseMetrics", bObj)
 
             val eObj = JSONObject()
@@ -1226,6 +1542,17 @@ class MainActivity : AppCompatActivity() {
             eObj.put("tnr", h.enhancedMetrics.tnr)
             eObj.put("macroF1", h.enhancedMetrics.macroF1)
             eObj.put("mcc", h.enhancedMetrics.mcc)
+            eObj.put("covCount", h.enhancedMetrics.coverageCount)
+            eObj.put("covPct", h.enhancedMetrics.coveragePercent)
+            if (h.enhancedMetrics.confusionMatrix.isNotEmpty()) {
+                val cmArray = JSONArray()
+                for (row in h.enhancedMetrics.confusionMatrix) {
+                    val rowArray = JSONArray()
+                    for (cell in row) rowArray.put(cell)
+                    cmArray.put(rowArray)
+                }
+                eObj.put("cm", cmArray)
+            }
             obj.put("enhancedMetrics", eObj)
 
             array.put(obj)
@@ -1243,6 +1570,7 @@ class MainActivity : AppCompatActivity() {
                 val obj = array.getJSONObject(i)
 
                 val bObj = obj.getJSONObject("baseMetrics")
+                val baseCm = parseConfusionMatrix(bObj)
                 val baseMetrics = Metrics(
                     accuracy = bObj.getDouble("acc"),
                     precision = bObj.getDouble("prec"),
@@ -1251,10 +1579,14 @@ class MainActivity : AppCompatActivity() {
                     tnr = bObj.getDouble("tnr"),
                     f1Score = bObj.getDouble("f1"),
                     macroF1 = bObj.optDouble("macroF1", bObj.getDouble("f1")),
-                    mcc = bObj.getDouble("mcc")
+                    mcc = bObj.getDouble("mcc"),
+                    confusionMatrix = baseCm,
+                    coverageCount = bObj.optInt("covCount", 0),
+                    coveragePercent = bObj.optDouble("covPct", 0.0)
                 )
 
                 val eObj = obj.getJSONObject("enhancedMetrics")
+                val enhCm = parseConfusionMatrix(eObj)
                 val enhancedMetrics = Metrics(
                     accuracy = eObj.getDouble("acc"),
                     precision = eObj.getDouble("prec"),
@@ -1263,7 +1595,10 @@ class MainActivity : AppCompatActivity() {
                     tnr = eObj.getDouble("tnr"),
                     f1Score = eObj.getDouble("f1"),
                     macroF1 = eObj.optDouble("macroF1", eObj.getDouble("f1")),
-                    mcc = eObj.getDouble("mcc")
+                    mcc = eObj.getDouble("mcc"),
+                    confusionMatrix = enhCm,
+                    coverageCount = eObj.optInt("covCount", 0),
+                    coveragePercent = eObj.optDouble("covPct", 0.0)
                 )
 
                 batchHistoryList.add(
@@ -1273,7 +1608,8 @@ class MainActivity : AppCompatActivity() {
                         totalImages = obj.getInt("totalImages"),
                         baseMetrics = baseMetrics,
                         enhancedMetrics = enhancedMetrics,
-                        activeClassesInfo = obj.optString("activeInfo", "")
+                        activeClassesInfo = obj.optString("activeInfo", ""),
+                        evaluationMode = obj.optString("evalMode", "Mode 1 (Paired)")
                     )
                 )
             }
@@ -1281,6 +1617,20 @@ class MainActivity : AppCompatActivity() {
             e.printStackTrace()
         }
         updateBatchHistoryUI()
+    }
+
+    private fun parseConfusionMatrix(json: JSONObject): List<List<Int>> {
+        val cmArray = json.optJSONArray("cm") ?: return emptyList()
+        val matrix = mutableListOf<List<Int>>()
+        for (r in 0 until cmArray.length()) {
+            val rowArray = cmArray.getJSONArray(r)
+            val row = mutableListOf<Int>()
+            for (c in 0 until rowArray.length()) {
+                row.add(rowArray.getInt(c))
+            }
+            matrix.add(row)
+        }
+        return matrix
     }
 
     private fun updateBatchHistoryUI() {
@@ -1298,34 +1648,56 @@ class MainActivity : AppCompatActivity() {
 
     private fun showBatchHistoryItemDialog(item: BatchHistoryItem) {
         val classLine = if (item.activeClassesInfo.isNotEmpty()) "• Tested Classes: ${item.activeClassesInfo}\n" else ""
+        val modeLine = "• Evaluation: ${item.evaluationMode}\n"
+        val isIndep = item.evaluationMode.contains("Independent", ignoreCase = true)
+        val baseCovLine = if (isIndep && item.baseMetrics.coverageCount > 0) "• Coverage: ${item.baseMetrics.coverageCount}/${item.totalImages} (${formatPercent(item.baseMetrics.coveragePercent / 100.0)})\n" else ""
+        val enhCovLine = if (isIndep && item.enhancedMetrics.coverageCount > 0) "• Coverage: ${item.enhancedMetrics.coverageCount}/${item.totalImages} (${formatPercent(item.enhancedMetrics.coveragePercent / 100.0)})\n" else ""
+
         val details = """
             Batch Test Date: ${item.date}
-            Evaluated Images: ${item.totalImages}
-            $classLine
+            Total Images: ${item.totalImages}
+            $modeLine$classLine
             BASE MODEL METRICS:
-            Accuracy: ${formatPercent(item.baseMetrics.accuracy)}
-            Precision: ${formatPercent(item.baseMetrics.precision)}
-            Recall: ${formatPercent(item.baseMetrics.recall)}
-            True Positive Rate: ${formatPercent(item.baseMetrics.tpr)}
-            True Negative Rate: ${formatPercent(item.baseMetrics.tnr)}
-            F1 Score: ${formatPercent(item.baseMetrics.f1Score)}
-            Macro F1: ${formatPercent(item.baseMetrics.macroF1)}
-            MCC: ${formatDouble(item.baseMetrics.mcc)}
-            
+            $baseCovLine• Accuracy: ${formatPercent(item.baseMetrics.accuracy)}
+            • Precision: ${formatPercent(item.baseMetrics.precision)}
+            • Recall: ${formatPercent(item.baseMetrics.recall)}
+            • True Positive Rate: ${formatPercent(item.baseMetrics.tpr)}
+            • True Negative Rate: ${formatPercent(item.baseMetrics.tnr)}
+            • F1 Score: ${formatPercent(item.baseMetrics.f1Score)}
+            • Macro F1: ${formatPercent(item.baseMetrics.macroF1)}
+            • MCC: ${formatDouble(item.baseMetrics.mcc)}
+
             ENHANCED MODEL METRICS:
-            Accuracy: ${formatPercent(item.enhancedMetrics.accuracy)}
-            Precision: ${formatPercent(item.enhancedMetrics.precision)}
-            Recall: ${formatPercent(item.enhancedMetrics.recall)}
-            True Positive Rate: ${formatPercent(item.enhancedMetrics.tpr)}
-            True Negative Rate: ${formatPercent(item.enhancedMetrics.tnr)}
-            F1 Score: ${formatPercent(item.enhancedMetrics.f1Score)}
-            Macro F1: ${formatPercent(item.enhancedMetrics.macroF1)}
-            MCC: ${formatDouble(item.enhancedMetrics.mcc)}
+            $enhCovLine• Accuracy: ${formatPercent(item.enhancedMetrics.accuracy)}
+            • Precision: ${formatPercent(item.enhancedMetrics.precision)}
+            • Recall: ${formatPercent(item.enhancedMetrics.recall)}
+            • True Positive Rate: ${formatPercent(item.enhancedMetrics.tpr)}
+            • True Negative Rate: ${formatPercent(item.enhancedMetrics.tnr)}
+            • F1 Score: ${formatPercent(item.enhancedMetrics.f1Score)}
+            • Macro F1: ${formatPercent(item.enhancedMetrics.macroF1)}
+            • MCC: ${formatDouble(item.enhancedMetrics.mcc)}
         """.trimIndent()
+
+        val linearLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(36, 28, 36, 28)
+        }
+
+        val textView = TextView(this).apply {
+            text = details
+            typeface = android.graphics.Typeface.MONOSPACE
+            textSize = 12f
+            setTextColor(android.graphics.Color.DKGRAY)
+        }
+        linearLayout.addView(textView)
+
+        val scrollView = NestedScrollView(this).apply {
+            addView(linearLayout)
+        }
 
         AlertDialog.Builder(this)
             .setTitle("Batch Test Record")
-            .setMessage(details)
+            .setView(scrollView)
             .setPositiveButton("Close", null)
             .show()
     }
@@ -1361,49 +1733,116 @@ class MainActivity : AppCompatActivity() {
         val txtTraining = dialogView.findViewById<TextView>(R.id.metrics_training)
         val txtClassification = dialogView.findViewById<TextView>(R.id.metrics_classification)
         val txtInference = dialogView.findViewById<TextView>(R.id.metrics_inference)
+        val txtMobile = dialogView.findViewById<TextView>(R.id.metrics_mobile)
+        val txtStatistical = dialogView.findViewById<TextView>(R.id.metrics_statistical)
         val btnClose = dialogView.findViewById<Button>(R.id.btn_close_metrics)
 
         txtTraining.text = """
-            |Training Time:
-            |Base: 40 mins  |  Enhanced: 2 hrs 30 mins
+            |• Training Time:
+            |  Base: 31m 07s (±4m 37s)
+            |  D-CLAHE: 1h 37m 10s (±6m 40s)
             |
-            |Memory Usage:
-            |Base: System RAM: 4.6GB, GPU RAM: 1.1GB
-            |Enhanced: System RAM: 6.0GB, GPU RAM: 2.1GB
+            |• Memory Usage:
+            |  Base: RAM: 3.08 GB | VRAM: 0.91 GB
+            |  D-CLAHE: RAM: 4.48 GB | VRAM: 1.33 GB
             |
-            |Weight Discrepancy (L2 Norm):
-            |Base: 1855.56  |  Enhanced: 1846.71 (Lower = Better)
+            |• Weight Discrepancy (L2 Norm):
+            |  Base: 1847.54 ± 0.62
+            |  D-CLAHE: 1845.65 ± 0.17
         """.trimMargin()
 
         txtClassification.text = """
-            |Accuracy:
-            |Base: 80.14%  |  Enhanced: 82.22% (+2.08%)
+            |• Accuracy:
+            |  Base: 80.06% ± 0.71%
+            |  D-CLAHE: 81.72% ± 0.65% (Δ = +1.67 pp)
             |
-            |Precision (Macro):
-            |Base: 82.52%  |  Enhanced: 84.07% (+1.55%)
+            |• Precision:
+            |  Base: 80.88% ± 1.09%
+            |  D-CLAHE: 82.73% ± 0.94% (Δ = +1.85 pp)
             |
-            |Recall (Macro):
-            |Base: 78.67%  |  Enhanced: 81.34% (+2.67%)
+            |• Recall:
+            |  Base: 79.51% ± 1.01%
+            |  D-CLAHE: 81.07% ± 0.51% (Δ = +1.56 pp)
             |
-            |F1 Score (Macro):
-            |Base: 79.81%  |  Enhanced: 82.24% (+2.43%)
+            |• F1 Score (Weighted):
+            |  Base: 79.93% ± 0.65%
+            |  D-CLAHE: 81.69% ± 0.61% (Δ = +1.76 pp)
             |
-            |True Negative Rate (Specificity):
-            |Base: 94.84%  |  Enhanced: 95.41% (+0.57%)
+            |• True Positive Rate (Sensitivity):
+            |  Base: 79.51% ± 1.01%
+            |  D-CLAHE: 81.07% ± 0.51% (Δ = +1.56 pp)
             |
-            |Matthews Correlation Coefficient (MCC):
-            |Base: 0.7525  |  Enhanced: 0.7783 (+0.0258)
+            |• True Negative Rate (Specificity):
+            |  Base: 94.95% ± 0.18%
+            |  D-CLAHE: 95.34% ± 0.15% (Δ = +0.38 pp)
+            |
+            |• Macro F1 Score:
+            |  Base: 79.61% ± 0.86%
+            |  D-CLAHE: 81.54% ± 0.61% (Δ = +1.92 pp)
+            |
+            |• Matthews Correlation (MCC):
+            |  Base: 0.7510 ± 0.0103
+            |  D-CLAHE: 0.7711 ± 0.0079 (Δ = +0.0201)
         """.trimMargin()
 
         txtInference.text = """
-            |Avg. Inference Latency (Per Image):
-            |Base: 11.75 ms  |  Enhanced: 18.04 ms (+6.29 ms)
+            |• Inference Latency:
+            |  Base: 9.07 ms (±0.90 ms)
+            |  D-CLAHE: 12.94 ms (±0.92 ms)
             |
-            |Multiply-Accumulate Operations (MACs):
-            |Base: 56,577,051  |  Enhanced: 98,254,540 (+41,677,489)
+            |• Multiply-Accumulate (MACs):
+            |  Base: 56,579,931
+            |  D-CLAHE: 98,483,212
             |
-            |Model Size (Total Parameters):
-            |Base: 942,005  |  Enhanced: 965,719 (+23,714)
+            |• Model Size (Parameters):
+            |  Base: 944,885
+            |  D-CLAHE: 968,599
+        """.trimMargin()
+
+        txtMobile.text = """
+            |• Accuracy:
+            |  Base: 49.86% ± 10.42%
+            |  Enhanced: 60.42% ± 6.85% (Δ = +10.56 pp)
+            |  Impact: +10.56% avg field boost; variance cut by 34%
+            |
+            |• Matthews Correlation (MCC):
+            |  Base: 0.4130 ± 0.0359
+            |  Enhanced: 0.5028 ± 0.0575 (Δ = +0.0898)
+            |  Impact: 100% win rate (5/5 seeds); p = 0.0221
+            |
+            |• Precision:
+            |  Base: 81.92% ± 1.79%
+            |  Enhanced: 85.92% ± 3.31% (Δ = +4.00 pp)
+            |  Impact: 100% win rate (5/5 seeds); peak 90.5%
+            |
+            |• Recall (Sensitivity):
+            |  Base: 52.06% ± 7.04%
+            |  Enhanced: 59.60% ± 7.10% (Δ = +7.54 pp)
+            |  Impact: Significant boost in detecting active blight
+            |
+            |• Specificity (TNR):
+            |  Base: 85.24% ± 4.62%
+            |  Enhanced: 87.62% ± 3.87% (Δ = +2.38 pp)
+            |  Impact: Consistently suppresses false disease alarms
+            |
+            |• Macro F1 Score:
+            |  Base: 58.88% ± 7.05%
+            |  Enhanced: 68.92% ± 5.22% (Δ = +10.04 pp)
+            |  Impact: Balanced class recognition across categories
+        """.trimMargin()
+
+        txtStatistical.text = """
+            |• Test Set Domain:
+            |  Base MCC: 0.7510 ± 0.0103
+            |  Enhanced MCC: 0.7711 ± 0.0079
+            |  t = 3.4529 | df = 7.50 | p = 0.0096 | d = 2.18
+            |  Conclusion: Highly Significant (p < 0.01)
+            |
+            |• Mobile App Test Domain:
+            |  Base MCC: 0.4130 ± 0.0359
+            |  Enhanced MCC: 0.5028 ± 0.0575
+            |  t = 2.9638 | df = 6.71 | p = 0.0221 | d = 1.87
+            |  Conclusion: Statistically Significant (p < 0.05)
         """.trimMargin()
 
         btnClose.setOnClickListener {

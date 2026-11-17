@@ -22,6 +22,9 @@ import java.util.Locale
  * @property f1Score Micro-averaged F1 score (mathematically equivalent to overall accuracy in single-label multi-class problems).
  * @property macroF1 Macro-averaged F1 score: Mean of per-class harmonic means 2*(P*R)/(P+R).
  * @property mcc Matthews Correlation Coefficient: Balanced quality metric resilient to severe class imbalance.
+ * @property confusionMatrix 5x5 confusion matrix (Rows = Actual Ground Truth, Columns = Predicted Class).
+ * @property coverageCount Number of batch test images that satisfied the confidence threshold and were evaluated.
+ * @property coveragePercent Percentage of uploaded images evaluated by the model.
  */
 data class Metrics(
     val accuracy: Double,
@@ -31,7 +34,10 @@ data class Metrics(
     val tnr: Double,
     val f1Score: Double,
     val macroF1: Double,
-    val mcc: Double
+    val mcc: Double,
+    val confusionMatrix: List<List<Int>> = emptyList(),
+    val coverageCount: Int = 0,
+    val coveragePercent: Double = 0.0
 )
 
 /**
@@ -45,6 +51,8 @@ data class Metrics(
  * @property totalImages Count of total test images processed across all 5 classes.
  * @property baseMetrics Evaluation metrics calculated for the standard MobileNetV3 Base Model.
  * @property enhancedMetrics Evaluation metrics calculated for the D-CLAHE Enhanced Model.
+ * @property activeClassesInfo Information about active ground truth classes in the run.
+ * @property evaluationMode Testing protocol used: "Mode 1 (Paired)" or "Mode 2 (Independent)".
  */
 data class BatchHistoryItem(
     val id: String,
@@ -52,7 +60,8 @@ data class BatchHistoryItem(
     val totalImages: Int,
     val baseMetrics: Metrics,
     val enhancedMetrics: Metrics,
-    val activeClassesInfo: String = ""
+    val activeClassesInfo: String = "",
+    val evaluationMode: String = "Mode 1 (Paired)"
 )
 
 /**
@@ -82,18 +91,33 @@ class BatchHistoryAdapter(
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
         val item = historyList[position]
         val activeSummary = if (item.activeClassesInfo.isNotEmpty()) " [${item.activeClassesInfo.split(" (").first()}]" else ""
-        holder.txtTitle.text = "Batch Test: ${item.date} (${item.totalImages} images)$activeSummary"
+        val modeSummary = if (item.evaluationMode.contains("Independent", ignoreCase = true)) " [Indep]" else ""
+        holder.txtTitle.text = "Batch Test: ${item.date} (${item.totalImages} images)$activeSummary$modeSummary"
 
-        val details = String.format(
-            Locale.US,
-            "Base Acc: %.1f%% | Enhanced Acc: %.1f%%",
-            item.baseMetrics.accuracy * 100,
-            item.enhancedMetrics.accuracy * 100
-        )
+        val details = if (item.evaluationMode.contains("Independent", ignoreCase = true)) {
+            String.format(
+                Locale.US,
+                "Base: %.1f%% (Cov: %.1f%%) | Enh: %.1f%% (Cov: %.1f%%)",
+                item.baseMetrics.accuracy * 100,
+                item.baseMetrics.coveragePercent,
+                item.enhancedMetrics.accuracy * 100,
+                item.enhancedMetrics.coveragePercent
+            )
+        } else {
+            String.format(
+                Locale.US,
+                "Base Acc: %.1f%% | Enhanced Acc: %.1f%%",
+                item.baseMetrics.accuracy * 100,
+                item.enhancedMetrics.accuracy * 100
+            )
+        }
         holder.txtDetails.text = details
 
         // Item click shows historical metrics details
-        holder.itemView.setOnClickListener { onItemClick(item) }
+        val openDialog = View.OnClickListener { onItemClick(item) }
+        holder.itemView.setOnClickListener(openDialog)
+        holder.txtTitle.setOnClickListener(openDialog)
+        holder.txtDetails.setOnClickListener(openDialog)
 
         // Handle individual item deletion
         holder.btnDelete?.setOnClickListener { onDeleteClick(item) }

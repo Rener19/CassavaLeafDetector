@@ -146,13 +146,13 @@ class ExampleUnitTest {
 
     @Test
     fun testGatekeeperThresholdConstant() {
-        // Assert that the Stage 1 Gatekeeper decision threshold is 70% (0.70f)
+        // Assert that the Stage 1 Gatekeeper decision threshold is calibrated to 60% (0.60f)
         assertEquals(0.70f, CassavaClassifier.GATEKEEPER_THRESHOLD, 0.0001f)
     }
 
     @Test
     fun testGatekeeperBinaryClassification() {
-        // Test values around the 0.70 threshold
+        // Test values around the 0.60 threshold
         val testProbabilities = listOf(0.05f, 0.699f, 0.70f, 0.701f, 0.99f)
         val expectedIsCassava = listOf(false, false, true, true, true)
 
@@ -169,13 +169,13 @@ class ExampleUnitTest {
         // Image 0: Non-cassava (0.15) -> excluded at Stage 1
         // Image 1: Cassava (0.92), low disease conf (0.45) -> excluded at Stage 2
         // Image 2: Cassava (0.85), high disease conf (0.88) -> evaluated
-        // Image 3: Non-cassava (0.65) -> excluded at Stage 1
+        // Image 3: Non-cassava (0.35) -> excluded at Stage 1
         // Image 4: Cassava (0.75), high disease conf (0.62) -> evaluated
         val samples = listOf(
             Pair(0.15f, 0.90f),
             Pair(0.92f, 0.45f),
             Pair(0.85f, 0.88f),
-            Pair(0.65f, 0.95f),
+            Pair(0.35f, 0.95f),
             Pair(0.75f, 0.62f)
         )
 
@@ -348,5 +348,73 @@ class ExampleUnitTest {
         assertEquals(0.50, metrics.tpr, 0.0001)
         assertEquals(1.00, metrics.tnr, 0.0001)
         assertEquals(0.50, metrics.f1Score, 0.0001)
+    }
+@Test
+    fun testConfusionMatrixCalculation() {
+        // Ground truths: 2 of class 0 (CBB), 1 of class 1 (CBSD), 2 of class 4 (Healthy)
+        // Predictions:
+        // - Class 0: 1 predicted as 0, 1 predicted as 1 (misclassified)
+        // - Class 1: 1 predicted as 1 (correct)
+        // - Class 4: 1 predicted as 4 (correct), 1 predicted as 3 (misclassified as CMD)
+        val groundTruths = listOf(0, 0, 1, 4, 4)
+        val predictions = listOf(0, 1, 1, 4, 3)
+        val metrics = MainActivity.calculateMetrics(predictions, groundTruths, 5)
+
+        val cm = metrics.confusionMatrix
+        assertEquals(5, cm.size)
+        for (row in cm) assertEquals(5, row.size)
+
+        // Row 0 (Actual CBB): 1 predicted as 0, 1 predicted as 1
+        assertEquals(1, cm[0][0])
+        assertEquals(1, cm[0][1])
+        assertEquals(0, cm[0][2])
+        assertEquals(0, cm[0][3])
+        assertEquals(0, cm[0][4])
+
+        // Row 1 (Actual CBSD): 1 predicted as 1
+        assertEquals(0, cm[1][0])
+        assertEquals(1, cm[1][1])
+        assertEquals(0, cm[1][2])
+
+        // Row 4 (Actual Healthy): 1 predicted as 3, 1 predicted as 4
+        assertEquals(0, cm[4][0])
+        assertEquals(0, cm[4][1])
+        assertEquals(0, cm[4][2])
+        assertEquals(1, cm[4][3])
+        assertEquals(1, cm[4][4])
+    }
+
+    @Test
+    fun testCoverageMetricsPreservation() {
+        val groundTruths = listOf(0, 1, 2, 3, 4)
+        val predictions = listOf(0, 1, 2, 3, 4)
+        val metrics = MainActivity.calculateMetrics(
+            predictions = predictions,
+            groundTruths = groundTruths,
+            numClasses = 5,
+            coverageCount = 150,
+            coveragePercent = 75.0
+        )
+
+        assertEquals(150, metrics.coverageCount)
+        assertEquals(75.0, metrics.coveragePercent, 0.0001)
+    }
+
+    @Test
+    fun testFormatConfusionMatrixMonospaceOutput() {
+        val cm = listOf(
+            listOf(12, 1, 0, 0, 0),
+            listOf(0, 15, 2, 0, 0),
+            listOf(0, 1, 10, 1, 0),
+            listOf(0, 0, 1, 18, 0),
+            listOf(0, 0, 0, 0, 20)
+        )
+        val formatted = MainActivity.formatConfusionMatrix(cm)
+
+        assertTrue(formatted.contains("Pred ->   CBB   CBS   CGM   CMD   HLT"))
+        assertTrue(formatted.contains("CBB"))
+        assertTrue(formatted.contains("12"))
+        assertTrue(formatted.contains("HLT"))
+        assertTrue(formatted.contains("20"))
     }
 }
