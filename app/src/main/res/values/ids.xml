@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Thesis specific IDs -->
     <item name="txt_base_label" type="id" />
@@ -24,6 +24,7 @@
     <item name="bottom_navigation" type="id" />
     <item name="layout_batch_test" type="id" />
     <item name="txt_model_badge" type="id" />
+    <item name="app_bar_layout" type="id" />
     
     <!-- User specific IDs -->
     <item name="txt_disease_desc" type="id" />
@@ -32,4 +33,35 @@
     <item name="lib_cbsd" type="id" />
     <item name="lib_cgm" type="id" />
     <item name="lib_cmd" type="id" />
+
+    <!-- Single scan threshold and filter IDs -->
+    <item name="healthyToggle" type="id" />
+    <item name="unhealthyToggle" type="id" />
+    <item name="allToggle" type="id" />
+    <item name="seek_single_threshold" type="id" />
+    <item name="txt_single_threshold_value" type="id" />
+
+    <!-- Batch evaluation mode IDs -->
+    <item name="toggle_batch_mode" type="id" />
+    <item name="btn_mode_paired" type="id" />
+    <item name="btn_mode_independent" type="id" />
+    <item name="txt_batch_mode_desc" type="id" />
+
+    <!-- Batch class individual clear buttons -->
+    <item name="btn_clear_cbb" type="id" />
+    <item name="btn_clear_cbsd" type="id" />
+    <item name="btn_clear_cgm" type="id" />
+    <item name="btn_clear_cmd" type="id" />
+    <item name="btn_clear_healthy" type="id" />
+    <item name="btn_clear_all_batch_inputs" type="id" />
+
+    <!-- Confusion matrix image visualizer views -->
+    <item name="img_cm_base" type="id" />
+    <item name="img_cm_enhanced" type="id" />
+    <item name="card_cm_base" type="id" />
+    <item name="card_cm_enhanced" type="id" />
+
+    <!-- Thesis metrics dialog views -->
+    <item name="metrics_mobile" type="id" />
+    <item name="metrics_statistical" type="id" />
 </resources>

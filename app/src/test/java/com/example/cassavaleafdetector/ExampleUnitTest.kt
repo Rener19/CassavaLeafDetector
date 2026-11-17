@@ -95,17 +95,326 @@ class ExampleUnitTest {
             accuracy = 0.85,
             precision = 0.86,
             recall = 0.84,
-            f1Score = 0.85,
+            tpr = 0.84,
             tnr = 0.96,
+            f1Score = 0.85,
             macroF1 = 0.85,
             mcc = 0.81
         )
         assertEquals(0.85, metrics.accuracy, 0.0001)
         assertEquals(0.86, metrics.precision, 0.0001)
         assertEquals(0.84, metrics.recall, 0.0001)
-        assertEquals(0.85, metrics.f1Score, 0.0001)
+        assertEquals(0.84, metrics.tpr, 0.0001)
         assertEquals(0.96, metrics.tnr, 0.0001)
+        assertEquals(0.85, metrics.f1Score, 0.0001)
         assertEquals(0.85, metrics.macroF1, 0.0001)
         assertEquals(0.81, metrics.mcc, 0.0001)
+    }
+
+    @Test
+    fun testConfidenceThresholdConstant() {
+        // Assert that the selective classification confidence threshold is 60% (0.60f)
+        assertEquals(0.60f, CassavaClassifier.CONFIDENCE_THRESHOLD, 0.0001f)
+    }
+
+    @Test
+    fun testSelectiveClassificationFilter() {
+        // Mock confidence values for 5 candidate predictions
+        val confidences = listOf(0.85f, 0.52f, 0.74f, 0.59f, 0.91f)
+        val groundTruths = listOf(0, 1, 2, 3, 4)
+        val predictedIndices = listOf(0, 2, 2, 3, 4)
+
+        val filteredPredictions = mutableListOf<Int>()
+        val filteredTruths = mutableListOf<Int>()
+        var excludedCount = 0
+
+        for (i in confidences.indices) {
+            if (confidences[i] >= CassavaClassifier.CONFIDENCE_THRESHOLD) {
+                filteredPredictions.add(predictedIndices[i])
+                filteredTruths.add(groundTruths[i])
+            } else {
+                excludedCount++
+            }
+        }
+
+        // Two items (0.52 and 0.59) are below 0.60 threshold and must be excluded
+        assertEquals(2, excludedCount)
+        assertEquals(3, filteredPredictions.size)
+        assertEquals(listOf(0, 2, 4), filteredPredictions)
+        assertEquals(listOf(0, 2, 4), filteredTruths)
+    }
+
+    @Test
+    fun testGatekeeperThresholdConstant() {
+        // Assert that the Stage 1 Gatekeeper decision threshold is calibrated to 60% (0.60f)
+        assertEquals(0.70f, CassavaClassifier.GATEKEEPER_THRESHOLD, 0.0001f)
+    }
+
+    @Test
+    fun testGatekeeperBinaryClassification() {
+        // Test values around the 0.60 threshold
+        val testProbabilities = listOf(0.05f, 0.699f, 0.70f, 0.701f, 0.99f)
+        val expectedIsCassava = listOf(false, false, true, true, true)
+
+        for (i in testProbabilities.indices) {
+            val prob = testProbabilities[i]
+            val isCassava = prob >= CassavaClassifier.GATEKEEPER_THRESHOLD
+            assertEquals("Mismatch for probability $prob", expectedIsCassava[i], isCassava)
+        }
+    }
+
+    @Test
+    fun testTwoStageCascadePipeline() {
+        // Mock a batch of 5 input images: (gatekeeper_prob, disease_confidence)
+        // Image 0: Non-cassava (0.15) -> excluded at Stage 1
+        // Image 1: Cassava (0.92), low disease conf (0.45) -> excluded at Stage 2
+        // Image 2: Cassava (0.85), high disease conf (0.88) -> evaluated
+        // Image 3: Non-cassava (0.35) -> excluded at Stage 1
+        // Image 4: Cassava (0.75), high disease conf (0.62) -> evaluated
+        val samples = listOf(
+            Pair(0.15f, 0.90f),
+            Pair(0.92f, 0.45f),
+            Pair(0.85f, 0.88f),
+            Pair(0.35f, 0.95f),
+            Pair(0.75f, 0.62f)
+        )
+
+        var passedGatekeeper = 0
+        var excludedNonCassava = 0
+        var excludedLowConf = 0
+        var fullyEvaluated = 0
+
+        for ((gkProb, diseaseConf) in samples) {
+            if (gkProb < CassavaClassifier.GATEKEEPER_THRESHOLD) {
+                excludedNonCassava++
+                continue
+            }
+            passedGatekeeper++
+            if (diseaseConf < CassavaClassifier.CONFIDENCE_THRESHOLD) {
+                excludedLowConf++
+                continue
+            }
+            fullyEvaluated++
+        }
+
+        assertEquals(2, excludedNonCassava)
+        assertEquals(3, passedGatekeeper)
+        assertEquals(1, excludedLowConf)
+        assertEquals(2, fullyEvaluated)
+    }
+
+    @Test
+    fun testAdjustableBatchConfidenceThreshold() {
+        val confidences = listOf(0.10f, 0.45f, 0.60f, 0.75f, 0.95f)
+
+        // Threshold = 0.00 (All images pass)
+        val passedAtZero = confidences.count { it >= 0.00f }
+        assertEquals(5, passedAtZero)
+
+        // Threshold = 0.60 (Default: 0.60, 0.75, 0.95 pass)
+        val passedAtDefault = confidences.count { it >= 0.60f }
+        assertEquals(3, passedAtDefault)
+
+        // Threshold = 0.80 (Only 0.95 passes)
+        val passedAtEighty = confidences.count { it >= 0.80f }
+        assertEquals(1, passedAtEighty)
+
+        // Threshold = 1.00 (Strict: none pass)
+        val passedAtHundred = confidences.count { it >= 1.00f }
+        assertEquals(0, passedAtHundred)
+    }
+
+    @Test
+    fun testActiveClassesMacroMetricsSingleClass() {
+        // Scenario: Exactly 1 image evaluated (Healthy = 4), predicted correctly as 4
+        val predictions = listOf(4)
+        val groundTruths = listOf(4)
+        val metrics = MainActivity.calculateMetrics(predictions, groundTruths, 5)
+
+        // With active-class averaging, metrics reflect the 1 active class without 0% penalties from untested classes
+        assertEquals(1.0, metrics.accuracy, 0.0001)
+        assertEquals(1.0, metrics.precision, 0.0001)
+        assertEquals(1.0, metrics.recall, 0.0001)
+        assertEquals(1.0, metrics.tpr, 0.0001)
+        assertEquals(1.0, metrics.f1Score, 0.0001)
+        assertEquals(1.0, metrics.macroF1, 0.0001)
+        assertEquals(1.0, metrics.tnr, 0.0001)
+        assertEquals(1.0, metrics.mcc, 0.0001)
+    }
+
+    @Test
+    fun testActiveClassesMacroMetricsPartialBatch() {
+        // Scenario: 2 classes tested (CBB = 0, Healthy = 4), 1 of each, both predicted correctly
+        val predictions = listOf(0, 4)
+        val groundTruths = listOf(0, 4)
+        val metrics = MainActivity.calculateMetrics(predictions, groundTruths, 5)
+
+        assertEquals(1.0, metrics.accuracy, 0.0001)
+        assertEquals(1.0, metrics.precision, 0.0001)
+        assertEquals(1.0, metrics.recall, 0.0001)
+        assertEquals(1.0, metrics.tpr, 0.0001)
+        assertEquals(1.0, metrics.f1Score, 0.0001)
+        assertEquals(1.0, metrics.macroF1, 0.0001)
+        assertEquals(1.0, metrics.tnr, 0.0001)
+        assertEquals(1.0, metrics.mcc, 0.0001)
+    }
+
+    @Test
+    fun testActiveClassesMacroMetricsPartialBatchWithConfusion() {
+        // Scenario: 2 classes tested (CBB = 0, Healthy = 4), both predicted as CBB = 0
+        // Ground truths: [0, 4], Predictions: [0, 0]
+        val predictions = listOf(0, 0)
+        val groundTruths = listOf(0, 4)
+        val metrics = MainActivity.calculateMetrics(predictions, groundTruths, 5)
+
+        // Class 0: TP=1, FP=1, FN=0 -> Precision=0.5, Recall=1.0, F1=0.667, TNR=0.0
+        // Class 4: TP=0, FP=0, FN=1 -> Precision=0.0, Recall=0.0, F1=0.0, TNR=1.0
+        // Macro: (0.5+0.0)/2 = 0.25 precision, (1.0+0.0)/2 = 0.50 recall, accuracy = 0.50
+        assertEquals(0.50, metrics.accuracy, 0.0001)
+        assertEquals(0.25, metrics.precision, 0.0001)
+        assertEquals(0.50, metrics.recall, 0.0001)
+        assertEquals(0.50, metrics.tpr, 0.0001)
+        assertEquals(0.50, metrics.tnr, 0.0001)
+    }
+
+    @Test
+    fun testActiveClassesMacroMetricsFullBatch() {
+        // Scenario: All 5 classes tested and predicted correctly
+        val predictions = listOf(0, 1, 2, 3, 4)
+        val groundTruths = listOf(0, 1, 2, 3, 4)
+        val metrics = MainActivity.calculateMetrics(predictions, groundTruths, 5)
+
+        assertEquals(1.0, metrics.accuracy, 0.0001)
+        assertEquals(1.0, metrics.precision, 0.0001)
+        assertEquals(1.0, metrics.recall, 0.0001)
+        assertEquals(1.0, metrics.tpr, 0.0001)
+        assertEquals(1.0, metrics.f1Score, 0.0001)
+        assertEquals(1.0, metrics.macroF1, 0.0001)
+        assertEquals(1.0, metrics.tnr, 0.0001)
+        assertEquals(1.0, metrics.mcc, 0.0001)
+    }
+
+    @Test
+    fun testActiveClassesMacroMetricsThreeClasses() {
+        // Scenario: 3 classes tested (0, 1, 4), 1 of each, all predicted correctly
+        val predictions = listOf(0, 1, 4)
+        val groundTruths = listOf(0, 1, 4)
+        val metrics = MainActivity.calculateMetrics(predictions, groundTruths, 5)
+
+        assertEquals(1.0, metrics.accuracy, 0.0001)
+        assertEquals(1.0, metrics.precision, 0.0001)
+        assertEquals(1.0, metrics.recall, 0.0001)
+        assertEquals(1.0, metrics.tpr, 0.0001)
+        assertEquals(1.0, metrics.tnr, 0.0001)
+        assertEquals(1.0, metrics.f1Score, 0.0001)
+        assertEquals(1.0, metrics.macroF1, 0.0001)
+        assertEquals(1.0, metrics.mcc, 0.0001)
+    }
+
+    @Test
+    fun testActiveClassesMacroMetricsFourClasses() {
+        // Scenario: 4 classes tested (0, 1, 2, 4), 1 of each, all predicted correctly
+        val predictions = listOf(0, 1, 2, 4)
+        val groundTruths = listOf(0, 1, 2, 4)
+        val metrics = MainActivity.calculateMetrics(predictions, groundTruths, 5)
+
+        assertEquals(1.0, metrics.accuracy, 0.0001)
+        assertEquals(1.0, metrics.precision, 0.0001)
+        assertEquals(1.0, metrics.recall, 0.0001)
+        assertEquals(1.0, metrics.tpr, 0.0001)
+        assertEquals(1.0, metrics.tnr, 0.0001)
+        assertEquals(1.0, metrics.f1Score, 0.0001)
+        assertEquals(1.0, metrics.macroF1, 0.0001)
+        assertEquals(1.0, metrics.mcc, 0.0001)
+    }
+
+    @Test
+    fun testActiveClassesMacroMetricsPartialBatchPredictingUntestedClass() {
+        // Scenario: 2 classes tested (CBB = 0, Healthy = 4), but model predicts CMD = 3 on image 2
+        // Ground truths: [0, 4], Predictions: [0, 3]
+        val predictions = listOf(0, 3)
+        val groundTruths = listOf(0, 4)
+        val metrics = MainActivity.calculateMetrics(predictions, groundTruths, 5)
+
+        // Tested classes: 0 and 4 (K=2)
+        // Image 1: Truth=0, Pred=0 -> TP_0=1, TN_4=1
+        // Image 2: Truth=4, Pred=3 -> FN_4=1, TN_0=1
+        // Class 0: TP=1, FP=0, FN=0, TN=1 -> Prec=1.0, Rec=1.0, TNR=1.0, F1=1.0
+        // Class 4: TP=0, FP=0, FN=1, TN=1 -> Prec=0.0, Rec=0.0, TNR=1.0, F1=0.0
+        // Macro (K=2): Prec=(1+0)/2 = 0.50, Rec=(1+0)/2 = 0.50, TNR=(1+1)/2 = 1.0, Acc=0.50
+        assertEquals(0.50, metrics.accuracy, 0.0001)
+        assertEquals(0.50, metrics.precision, 0.0001)
+        assertEquals(0.50, metrics.recall, 0.0001)
+        assertEquals(0.50, metrics.tpr, 0.0001)
+        assertEquals(1.00, metrics.tnr, 0.0001)
+        assertEquals(0.50, metrics.f1Score, 0.0001)
+    }
+@Test
+    fun testConfusionMatrixCalculation() {
+        // Ground truths: 2 of class 0 (CBB), 1 of class 1 (CBSD), 2 of class 4 (Healthy)
+        // Predictions:
+        // - Class 0: 1 predicted as 0, 1 predicted as 1 (misclassified)
+        // - Class 1: 1 predicted as 1 (correct)
+        // - Class 4: 1 predicted as 4 (correct), 1 predicted as 3 (misclassified as CMD)
+        val groundTruths = listOf(0, 0, 1, 4, 4)
+        val predictions = listOf(0, 1, 1, 4, 3)
+        val metrics = MainActivity.calculateMetrics(predictions, groundTruths, 5)
+
+        val cm = metrics.confusionMatrix
+        assertEquals(5, cm.size)
+        for (row in cm) assertEquals(5, row.size)
+
+        // Row 0 (Actual CBB): 1 predicted as 0, 1 predicted as 1
+        assertEquals(1, cm[0][0])
+        assertEquals(1, cm[0][1])
+        assertEquals(0, cm[0][2])
+        assertEquals(0, cm[0][3])
+        assertEquals(0, cm[0][4])
+
+        // Row 1 (Actual CBSD): 1 predicted as 1
+        assertEquals(0, cm[1][0])
+        assertEquals(1, cm[1][1])
+        assertEquals(0, cm[1][2])
+
+        // Row 4 (Actual Healthy): 1 predicted as 3, 1 predicted as 4
+        assertEquals(0, cm[4][0])
+        assertEquals(0, cm[4][1])
+        assertEquals(0, cm[4][2])
+        assertEquals(1, cm[4][3])
+        assertEquals(1, cm[4][4])
+    }
+
+    @Test
+    fun testCoverageMetricsPreservation() {
+        val groundTruths = listOf(0, 1, 2, 3, 4)
+        val predictions = listOf(0, 1, 2, 3, 4)
+        val metrics = MainActivity.calculateMetrics(
+            predictions = predictions,
+            groundTruths = groundTruths,
+            numClasses = 5,
+            coverageCount = 150,
+            coveragePercent = 75.0
+        )
+
+        assertEquals(150, metrics.coverageCount)
+        assertEquals(75.0, metrics.coveragePercent, 0.0001)
+    }
+
+    @Test
+    fun testFormatConfusionMatrixMonospaceOutput() {
+        val cm = listOf(
+            listOf(12, 1, 0, 0, 0),
+            listOf(0, 15, 2, 0, 0),
+            listOf(0, 1, 10, 1, 0),
+            listOf(0, 0, 1, 18, 0),
+            listOf(0, 0, 0, 0, 20)
+        )
+        val formatted = MainActivity.formatConfusionMatrix(cm)
+
+        assertTrue(formatted.contains("Pred ->   CBB   CBS   CGM   CMD   HLT"))
+        assertTrue(formatted.contains("CBB"))
+        assertTrue(formatted.contains("12"))
+        assertTrue(formatted.contains("HLT"))
+        assertTrue(formatted.contains("20"))
     }
 }

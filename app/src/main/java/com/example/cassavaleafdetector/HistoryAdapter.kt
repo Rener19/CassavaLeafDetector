@@ -1,5 +1,6 @@
 package com.example.cassavaleafdetector
 
+import android.content.res.ColorStateList
 import android.graphics.BitmapFactory
 import android.os.Handler
 import android.os.Looper
@@ -101,7 +102,7 @@ class HistoryAdapter(
             3 -> R.color.color_cmd
             else -> R.color.color_healthy
         }
-        holder.txtConfidence.setBackgroundColor(context.getColor(bgDrawable))
+        holder.txtConfidence.backgroundTintList = ColorStateList.valueOf(context.getColor(bgDrawable))
 
         // 3. Safe Asynchronous Image Loading with Downsampling
         val imgPath = item.imagePath

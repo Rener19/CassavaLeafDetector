@@ -42,6 +42,7 @@ class CassavaClassifier(private val context: Context) : AutoCloseable {
     private var baseInterpreter: Interpreter? = null
     private var enhancedInterpreter: Interpreter? = null
     private var visualizerInterpreter: Interpreter? = null
+    private var gatekeeperInterpreter: Interpreter? = null
 
     // Flags indicating whether each model was loaded successfully from assets
     var isBaseModelLoaded = false
@@ -50,20 +51,31 @@ class CassavaClassifier(private val context: Context) : AutoCloseable {
         private set
     var isVisualizerModelLoaded = false
         private set
+    var isGatekeeperModelLoaded = false
+        private set
 
     // File sizes (in KB) tracked for performance and model-complexity reporting
     private var baseModelSizeKb: Long = 0
     private var enhancedModelSizeKb: Long = 0
+    private var gatekeeperModelSizeKb: Long = 0
 
     companion object {
         // Asset filenames for the compiled TensorFlow Lite models
         const val BASE_MODEL_PATH = "model_base.tflite"
         const val ENHANCED_MODEL_PATH = "model_enhanced.tflite"
         const val VISUALIZER_MODEL_PATH = "model_visualizer.tflite"
+        const val GATEKEEPER_MODEL_PATH = "cassava_gatekeeper.tflite"
 
         // Input tensor dimensions required by MobileNetV3
         const val INPUT_IMAGE_WIDTH = 224
         const val INPUT_IMAGE_HEIGHT = 224
+
+
+        // Stage 1 Gatekeeper decision threshold (calibrated tau = 0.70 from multi-foliage sweep)
+        const val GATEKEEPER_THRESHOLD = 0.70f
+
+        // Selective Classification rejection threshold (Geifman & El-Yaniv, 2017; Ramcharan et al., 2019)
+        const val CONFIDENCE_THRESHOLD = 0.60f
 
         /**
          * Standard disease taxonomy index used across the entire application:
@@ -141,6 +153,19 @@ class CassavaClassifier(private val context: Context) : AutoCloseable {
             e.printStackTrace()
             isVisualizerModelLoaded = false
         }
+
+        // Initialize Stage 1 Gatekeeper binary model interpreter
+        try {
+            val gatekeeperFd = context.assets.openFd(GATEKEEPER_MODEL_PATH)
+            gatekeeperModelSizeKb = gatekeeperFd.length / 1024
+            val gatekeeperBuffer = loadModelFile(GATEKEEPER_MODEL_PATH)
+            val options = Interpreter.Options()
+            gatekeeperInterpreter = Interpreter(gatekeeperBuffer, options)
+            isGatekeeperModelLoaded = true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            isGatekeeperModelLoaded = false
+        }
     }
 
     /**
@@ -157,6 +182,19 @@ class CassavaClassifier(private val context: Context) : AutoCloseable {
         val declaredLength = fileDescriptor.declaredLength
         return fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength)
     }
+
+    /**
+     * Holds Stage 1 binary gatekeeper inference outcome.
+     *
+     * @property isCassava True if sigmoid probability meets or exceeds [GATEKEEPER_THRESHOLD].
+     * @property probability Raw sigmoid probability [0.0 - 1.0] of being a cassava leaf.
+     * @property inferenceTimeMs Latency of the gatekeeper inference in milliseconds.
+     */
+    data class GatekeeperResult(
+        val isCassava: Boolean,
+        val probability: Float,
+        val inferenceTimeMs: Long
+    )
 
     /**
      * Holds individual diagnostic inference output from a single model.
@@ -181,15 +219,67 @@ class CassavaClassifier(private val context: Context) : AutoCloseable {
         val enhancedResult: ModelResult,
         val description: String,
         val treatment: String,
-        val enhancedBitmap: Bitmap? = null
+        val enhancedBitmap: Bitmap? = null,
+        val gatekeeperResult: GatekeeperResult? = null
     )
+
+    /**
+     * Executes Stage 1 binary gatekeeper inference on the input [bitmap].
+     * Determines whether the presented image is a cassava leaf before proceeding to disease classification.
+     *
+     * Preprocessing:
+     * - Resizes image to 224x224 using bilinear interpolation.
+     * - Model includes an internal Rescaling(1/127.5, -1.0) layer, so raw pixel floats [0.0, 255.0]
+     *   from TensorImage.load(bitmap) are fed directly.
+     *
+     * Output:
+     * - Output tensor is [1, 1] FLOAT32 with Sigmoid probability in [0.0, 1.0].
+     * - Evaluated against [GATEKEEPER_THRESHOLD] (0.70f).
+     */
+    fun checkGatekeeper(bitmap: Bitmap): GatekeeperResult {
+        if (!isGatekeeperModelLoaded || gatekeeperInterpreter == null) {
+            // Graceful fallback if gatekeeper model is not loaded
+            return GatekeeperResult(isCassava = true, probability = 1.0f, inferenceTimeMs = 0)
+        }
+
+        try {
+            val startTime = SystemClock.uptimeMillis()
+
+            val imageProcessor = ImageProcessor.Builder()
+                .add(ResizeOp(INPUT_IMAGE_WIDTH, INPUT_IMAGE_HEIGHT, ResizeOp.ResizeMethod.BILINEAR))
+                .build()
+
+            var tensorImage = TensorImage(org.tensorflow.lite.DataType.FLOAT32)
+            tensorImage.load(bitmap)
+            tensorImage = imageProcessor.process(tensorImage)
+
+            val outputBuffer = TensorBuffer.createFixedSize(intArrayOf(1, 1), org.tensorflow.lite.DataType.FLOAT32)
+            gatekeeperInterpreter!!.run(tensorImage.buffer, outputBuffer.buffer.rewind())
+
+            val endTime = SystemClock.uptimeMillis()
+            val inferenceTime = endTime - startTime
+
+            val probability = outputBuffer.floatArray[0].coerceIn(0.0f, 1.0f)
+            val isCassava = probability >= GATEKEEPER_THRESHOLD
+
+            return GatekeeperResult(
+                isCassava = isCassava,
+                probability = probability,
+                inferenceTimeMs = inferenceTime
+            )
+        } catch (e: Exception) {
+            e.printStackTrace()
+            // In case of inference failure, fail-open with logging so as not to block app
+            return GatekeeperResult(isCassava = true, probability = 1.0f, inferenceTimeMs = 0)
+        }
+    }
 
     /**
      * Executes classification on the given input leaf [bitmap].
      * Runs both the Base Model and the Enhanced Model, and optionally runs the
      * D-CLAHE visualizer model to generate an enhanced contrast preview image.
      */
-    fun classifyImage(bitmap: Bitmap): ComparisonResult {
+    fun classifyImage(bitmap: Bitmap, gatekeeperResult: GatekeeperResult? = null): ComparisonResult {
         if (!isBaseModelLoaded || baseInterpreter == null) {
             throw IllegalStateException("Base model ($BASE_MODEL_PATH) is not loaded or missing from assets.")
         }
@@ -223,7 +313,8 @@ class CassavaClassifier(private val context: Context) : AutoCloseable {
             enhancedResult = enhancedResult,
             description = finalDescription,
             treatment = TREATMENTS[enhancedResult.index],
-            enhancedBitmap = enhancedBitmap
+            enhancedBitmap = enhancedBitmap,
+            gatekeeperResult = gatekeeperResult
         )
     }
 
@@ -431,7 +522,7 @@ class CassavaClassifier(private val context: Context) : AutoCloseable {
 
             return ModelResult(
                 label = LABELS[mappedIndex],
-                confidence = confidence.coerceIn(0.5f, 0.99f),
+                confidence = confidence.coerceIn(0.01f, 0.99f),
                 index = mappedIndex,
                 inferenceTimeMs = inferenceTime,
                 modelSizeKb = modelSizeKb,
@@ -457,6 +548,8 @@ class CassavaClassifier(private val context: Context) : AutoCloseable {
             enhancedInterpreter = null
             visualizerInterpreter?.close()
             visualizerInterpreter = null
+            gatekeeperInterpreter?.close()
+            gatekeeperInterpreter = null
         } catch (e: Exception) {
             e.printStackTrace()
         }

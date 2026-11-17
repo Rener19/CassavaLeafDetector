@@ -1,12 +1,7 @@
 *.iml
 .gradle
 /local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
+/.idea/
 .DS_Store
 /build
 /captures
@@ -14,6 +9,25 @@
 .cxx
 local.properties
 /AGENTS.md
-/.agents/AGENTS.md
 /.agents/
 .kotlin/
+
+# Android build outputs & binaries
+*.apk
+*.aab
+app/src/main/assets/backup/
+
+# Python scratch & bytecode
+__pycache__/
+*.py[cod]
+*.py
+
+# Scratch documents & temporary artifacts
+*.docx
+*.pptx
+*.drawio
+extracted_doc.txt
+test_*
+architecture_diagram_corrected.*
+architecture_diagram_editable.*
+app/src/main/java/com/example/cassavaleafdetector/ConfusionMatrixBitmapGenerator.kt

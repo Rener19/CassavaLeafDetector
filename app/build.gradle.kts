@@ -65,7 +65,10 @@ dependencies {
     
     // TensorFlow Lite
     implementation(libs.tensorflow.lite)
-    implementation(libs.tensorflow.lite.support)
+    implementation(libs.tensorflow.lite.support) {
+        exclude(group = "org.tensorflow", module = "tensorflow-lite")
+        exclude(group = "org.tensorflow", module = "tensorflow-lite-api")
+    }
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
